@@ -17,6 +17,7 @@ android {
 
     signingConfigs {
         create("release") {
+            storeType = "PKCS12"
             storeFile = rootProject.file(keystoreProps.getProperty("storeFile", "zhiwei-release.jks"))
             storePassword = keystoreProps.getProperty("storePassword")
             keyAlias = keystoreProps.getProperty("keyAlias")

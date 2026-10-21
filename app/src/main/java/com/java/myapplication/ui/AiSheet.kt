@@ -236,10 +236,20 @@ private fun ChatPane(vm: BrowserViewModel, onOpenSettings: () -> Unit) {
                         }
                     }
                     else -> {
-                        // 文本类附件：读前 6000 字
                         val bytes = cr.openInputStream(uri)?.use { it.readBytes() } ?: return@runCatching
-                        val text = String(bytes, Charsets.UTF_8).take(6000)
-                        Attachment(name, mime, text, null)
+                        // 判断是否为文本：UTF-8 解码后无可疑控制字符则视为文本
+                        val asText = runCatching { String(bytes, Charsets.UTF_8) }.getOrNull()
+                        val isText = asText != null && bytes.size <= 2_000_000 &&
+                            asText.count { it.code < 9 || (it.code in 14..31) } < asText.length / 100 + 4
+                        if (isText) {
+                            Attachment(name, mime, asText!!.take(6000), null)
+                        } else {
+                            // 二进制/其他类型：保存到浏览器专属附件目录
+                            val dir = java.io.File(context.getExternalFilesDir(null), "attachments").apply { mkdirs() }
+                            val out = java.io.File(dir, "${System.currentTimeMillis()}_$name")
+                            out.writeBytes(bytes)
+                            Attachment(name, mime, "（二进制文件已保存到本地：${out.absolutePath}）", null)
+                        }
                     }
                 }
             }
@@ -309,7 +319,7 @@ private fun ChatPane(vm: BrowserViewModel, onOpenSettings: () -> Unit) {
         }
 
         // ---------- 输入行：附件 + 输入框 + 发送（固定高度，防拉伸） ----------
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Bottom) {
             Surface(
                 onClick = { pickFile.launch("*/*") },
                 color = MaterialTheme.colorScheme.surfaceVariant,

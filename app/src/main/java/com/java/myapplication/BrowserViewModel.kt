@@ -120,9 +120,10 @@ class BrowserViewModel : ViewModel() {
                 val name = URLUtil.guessFileName(url, cd, mime)
                 req.setTitle(name)
                 req.setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
-                req.setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, name)
+                // 专属下载目录：Download/知微浏览器/
+                req.setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, "知微浏览器/$name")
                 (context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager).enqueue(req)
-                Toast.makeText(context, "开始下载：$name", Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, "开始下载：$name\n保存到：下载/知微浏览器/", Toast.LENGTH_LONG).show()
             } catch (e: Exception) {
                 Toast.makeText(context, "下载失败：${e.message}", Toast.LENGTH_SHORT).show()
             }

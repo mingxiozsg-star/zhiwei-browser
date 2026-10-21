@@ -100,7 +100,7 @@ object Settings {
     // ---------- AI ----------
     /** AI 厂商预设：名称 / API Base / 默认模型（自定义不覆盖用户填写） */
     val AI_PROVIDERS = listOf(
-        Triple("知微中转站（推荐）", "https://ly.77625.xyz/v1", "deepseek-v4-flash"),
+        Triple("77625 路由站（推荐）", "https://ly.77625.xyz/v1", "deepseek-v4-flash"),
         Triple("DeepSeek 官方", "https://api.deepseek.com/v1", "deepseek-chat"),
         Triple("OpenAI", "https://api.openai.com/v1", "gpt-4o-mini"),
         Triple("月之暗面 Kimi", "https://api.moonshot.cn/v1", "moonshot-v1-8k"),
@@ -127,7 +127,7 @@ object Settings {
         set(v) { p.edit().putString("ai_base", v).apply(); bump() }
 
     var aiKey: String
-        get() = p.getString("ai_key", "sk-77625-e4105914096f53a7e801e569d41ba19c14ea0e6b") ?: ""
+        get() = p.getString("ai_key", "") ?: ""
         set(v) { p.edit().putString("ai_key", v).apply(); bump() }
 
     var aiModel: String

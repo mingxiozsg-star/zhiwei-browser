@@ -56,6 +56,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.java.myapplication.BrowserViewModel
 import com.java.myapplication.Settings
+import kotlinx.coroutines.launch
 import com.java.myapplication.Store
 
 /** 设置：分组首页 + 二级页面 */
@@ -391,15 +392,138 @@ private fun TranslatePage() {
 
 @Composable
 private fun AboutPage() {
-    Column(Modifier.padding(20.dp)) {
-        Text("知微浏览器 1.0", style = MaterialTheme.typography.titleMedium)
-        Spacer(Modifier.height(8.dp))
+    val context = LocalContext.current
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    var checking by remember { mutableStateOf(false) }
+    var updateMsg by remember { mutableStateOf<String?>(null) }
+    var updateUrl by remember { mutableStateOf<String?>(null) }
+
+    val webviewVer = remember {
+        runCatching {
+            val pi = context.packageManager.getPackageInfo("com.google.android.webview", 0)
+            pi.versionName ?: "未知"
+        }.getOrDefault("未知")
+    }
+    val resolution = remember {
+        val m = context.resources.displayMetrics
+        "${m.widthPixels} × ${m.heightPixels}"
+    }
+
+    Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        Spacer(Modifier.height(28.dp))
+        Text("知微浏览器", style = MaterialTheme.typography.headlineMedium)
+        Spacer(Modifier.height(4.dp))
         Text(
-            "基于系统 WebView（Chromium 内核），网站兼容性跟随系统 WebView 版本。\n\n" +
-                    "内置 AI 总结 / 翻译 / 对话，支持自定义主页、快捷方式与背景。",
+            "${com.java.myapplication.BuildConfig.VERSION_NAME}",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
+        Spacer(Modifier.height(20.dp))
+
+        Button(
+            onClick = {
+                if (checking) return@Button
+                checking = true
+                updateMsg = null; updateUrl = null
+                scope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                    try {
+                        val conn = java.net.URL("https://api.github.com/repos/mingxiozsg-star/zhiwei-browser/releases/latest")
+                            .openConnection() as java.net.HttpURLConnection
+                        conn.connectTimeout = 10000; conn.readTimeout = 10000
+                        conn.setRequestProperty("Accept", "application/vnd.github+json")
+                        val body = conn.inputStream.bufferedReader().readText()
+                        val tag = org.json.JSONObject(body).optString("tag_name").removePrefix("v")
+                        val html = org.json.JSONObject(body).optString("html_url")
+                        val cur = com.java.myapplication.BuildConfig.VERSION_NAME
+                        launch(kotlinx.coroutines.Dispatchers.Main) {
+                            checking = false
+                            if (tag.isNotEmpty() && tag != cur) {
+                                updateMsg = "发现新版本 v$tag（当前 v$cur）"
+                                updateUrl = html
+                            } else {
+                                updateMsg = "已是最新版本（v$cur）"
+                            }
+                        }
+                    } catch (e: Exception) {
+                        launch(kotlinx.coroutines.Dispatchers.Main) {
+                            checking = false
+                            updateMsg = "检查失败：${e.message}"
+                        }
+                    }
+                }
+            },
+            enabled = !checking
+        ) { Text(if (checking) "检查中…" else "检查更新") }
+
+        updateMsg?.let {
+            Spacer(Modifier.height(10.dp))
+            Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+            updateUrl?.let { url ->
+                TextButton(onClick = {
+                    context.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url)))
+                }) { Text("前往下载", style = MaterialTheme.typography.labelSmall) }
+            }
+        }
+
+        Spacer(Modifier.height(24.dp))
+
+        // 软件与版本信息
+        AboutCard("软件与版本信息", listOf(
+            "软件名称" to "知微浏览器",
+            "软件版本" to "${com.java.myapplication.BuildConfig.VERSION_NAME} (${com.java.myapplication.BuildConfig.VERSION_CODE})",
+            "包名" to com.java.myapplication.BuildConfig.APPLICATION_ID,
+            "构建类型" to com.java.myapplication.BuildConfig.BUILD_TYPE,
+        ))
+        Spacer(Modifier.height(12.dp))
+
+        // 设备与系统信息
+        AboutCard("设备与系统信息", listOf(
+            "系统版本" to "Android ${android.os.Build.VERSION.RELEASE}（API ${android.os.Build.VERSION.SDK_INT}）",
+            "设备" to "${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}",
+            "屏幕分辨率" to resolution,
+            "WebView 内核" to webviewVer,
+        ))
+        Spacer(Modifier.height(12.dp))
+
+        // 开源与许可
+        Row(
+            Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp))
+                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                .clickable {
+                    context.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW,
+                        android.net.Uri.parse("https://github.com/mingxiozsg-star/zhiwei-browser")))
+                }
+                .padding(horizontal = 16.dp, vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text("开源仓库与 MIT 许可", Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+            Icon(Icons.Default.KeyboardArrowRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Spacer(Modifier.height(16.dp))
+        Text(
+            "无广告 · 无埋点 · 数据仅存本地",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
+
+@Composable
+private fun AboutCard(title: String, rows: List<Pair<String, String>>) {
+    Column(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+            .padding(horizontal = 16.dp, vertical = 12.dp)
+    ) {
+        Text(title, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+        Spacer(Modifier.height(8.dp))
+        rows.forEach { (k, v) ->
+            Row(Modifier.fillMaxWidth().padding(vertical = 5.dp)) {
+                Text(k, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Spacer(Modifier.weight(1f))
+                Text(v, style = MaterialTheme.typography.bodyMedium)
+            }
+        }
     }
 }
 

@@ -2,6 +2,7 @@ package com.java.myapplication.ui
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
@@ -205,29 +206,62 @@ fun OnboardingScreen(onDone: () -> Unit) {
 private fun OnboardPage(emoji: String, title: String, lines: List<String>) {
     var show by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { show = true }
+
+    // 呼吸浮动动画
+    val transition = androidx.compose.animation.core.rememberInfiniteTransition(label = "pulse")
+    val pulse by transition.animateFloat(
+        initialValue = 1f, targetValue = 1.08f,
+        animationSpec = androidx.compose.animation.core.infiniteRepeatable(
+            androidx.compose.animation.core.tween(1400, easing = FastOutSlowInEasing),
+            androidx.compose.animation.core.RepeatMode.Reverse
+        ), label = "pulseScale"
+    )
+
     Column(
         Modifier.fillMaxSize().padding(horizontal = 32.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
         AnimatedVisibility(visible = show, enter = fadeIn(tween(500)) + slideInVertically(tween(500)) { it / 3 }) {
-            Text(emoji, style = MaterialTheme.typography.displayLarge)
+            Box(
+                Modifier.size(120.dp).scale(pulse)
+                    .clip(CircleShape)
+                    .background(Brush.linearGradient(listOf(
+                        MaterialTheme.colorScheme.primary.copy(alpha = 0.25f),
+                        MaterialTheme.colorScheme.tertiary.copy(alpha = 0.25f)
+                    ))),
+                contentAlignment = Alignment.Center
+            ) {
+                Box(
+                    Modifier.size(96.dp).clip(CircleShape)
+                        .background(Brush.linearGradient(listOf(
+                            MaterialTheme.colorScheme.primary,
+                            MaterialTheme.colorScheme.tertiary
+                        ))),
+                    contentAlignment = Alignment.Center
+                ) { Text(emoji, style = MaterialTheme.typography.displaySmall) }
+            }
+        }
+        Spacer(Modifier.height(28.dp))
+        AnimatedVisibility(visible = show, enter = fadeIn(tween(500, 150)) + slideInVertically(tween(500, 150)) { it / 3 }) {
+            Text(title, style = MaterialTheme.typography.headlineMedium)
         }
         Spacer(Modifier.height(24.dp))
-        AnimatedVisibility(visible = show, enter = fadeIn(tween(500, 150)) + slideInVertically(tween(500, 150)) { it / 3 }) {
-            Text(title, style = MaterialTheme.typography.headlineSmall)
-        }
-        Spacer(Modifier.height(20.dp))
         lines.forEachIndexed { i, line ->
             AnimatedVisibility(
                 visible = show,
                 enter = fadeIn(tween(450, 250 + i * 120)) + slideInVertically(tween(450, 250 + i * 120)) { it / 3 }
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 5.dp)) {
-                    Text("✦", color = MaterialTheme.colorScheme.primary)
-                    Spacer(Modifier.width(10.dp))
-                    Text(line, style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Surface(
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
+                    shape = RoundedCornerShape(14.dp),
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 5.dp)
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+                        Text("✦", color = MaterialTheme.colorScheme.primary)
+                        Spacer(Modifier.width(12.dp))
+                        Text(line, style = MaterialTheme.typography.bodyLarge)
+                    }
                 }
             }
         }

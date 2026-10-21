@@ -112,21 +112,7 @@ class BrowserViewModel : ViewModel() {
         w.webViewClient = BrowserClient(tab)
         w.webChromeClient = BrowserChrome(tab)
         w.setDownloadListener(DownloadListener { url, ua, cd, mime, _ ->
-            try {
-                val req = DownloadManager.Request(Uri.parse(url))
-                req.setMimeType(mime)
-                req.addRequestHeader("User-Agent", ua)
-                req.addRequestHeader("Cookie", CookieManager.getInstance().getCookie(url))
-                val name = URLUtil.guessFileName(url, cd, mime)
-                req.setTitle(name)
-                req.setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
-                // 专属下载目录：Download/知微浏览器/
-                req.setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, "知微浏览器/$name")
-                (context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager).enqueue(req)
-                Toast.makeText(context, "开始下载：$name\n保存到：下载/知微浏览器/", Toast.LENGTH_LONG).show()
-            } catch (e: Exception) {
-                Toast.makeText(context, "下载失败：${e.message}", Toast.LENGTH_SHORT).show()
-            }
+            promptDownload(context, url, ua, cd, mime)
         })
         tab.webView = w
         return w
@@ -202,6 +188,47 @@ class BrowserViewModel : ViewModel() {
         } catch (e: Exception) { s }
     }
 
+    // ---------------- 下载 ----------------
+    /** 常见可下载文件扩展名（直链兜底检测） */
+    private val downloadExts = listOf(
+        ".apk", ".zip", ".rar", ".7z", ".tar", ".gz", ".exe", ".msi", ".dmg",
+        ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx",
+        ".mp3", ".wav", ".flac", ".mp4", ".mkv", ".avi", ".mov",
+        ".jpg", ".jpeg", ".png", ".gif", ".webp", ".psd",
+        ".txt", ".csv", ".json", ".xml", ".epub", ".mobi"
+    )
+
+    fun isDownloadLink(url: String): Boolean {
+        val path = Uri.parse(url).path?.lowercase() ?: return false
+        return downloadExts.any { path.endsWith(it) }
+    }
+
+    /** 弹出下载确认框，确认后入队系统下载器并记录到下载历史 */
+    fun promptDownload(context: Context, url: String, ua: String?, contentDisposition: String?, mime: String?) {
+        val name = URLUtil.guessFileName(url, contentDisposition, mime)
+        AlertDialog.Builder(context)
+            .setTitle("下载文件")
+            .setMessage("$name\n\n保存到：下载/知微浏览器/")
+            .setPositiveButton("下载") { _, _ ->
+                try {
+                    val req = DownloadManager.Request(Uri.parse(url))
+                    if (mime != null) req.setMimeType(mime)
+                    req.addRequestHeader("User-Agent", ua ?: WebSettings.getDefaultUserAgent(context))
+                    CookieManager.getInstance().getCookie(url)?.let { req.addRequestHeader("Cookie", it) }
+                    req.setTitle(name)
+                    req.setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+                    req.setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, "知微浏览器/$name")
+                    (context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager).enqueue(req)
+                    Store.addDownload(name, url)
+                    Toast.makeText(context, "开始下载：$name\n保存到：下载/知微浏览器/", Toast.LENGTH_LONG).show()
+                } catch (e: Exception) {
+                    Toast.makeText(context, "下载失败：${e.message}", Toast.LENGTH_SHORT).show()
+                }
+            }
+            .setNegativeButton("取消", null)
+            .show()
+    }
+
     // ---------------- WebViewClient ----------------
     inner class BrowserClient(private val tab: Tab) : WebViewClient() {
 
@@ -221,6 +248,11 @@ class BrowserViewModel : ViewModel() {
                 return true
             }
             if (url.startsWith("http://") || url.startsWith("https://") || url.startsWith("about:")) {
+                // 直链兜底：识别可下载文件扩展名，直接弹下载框
+                if (isDownloadLink(url)) {
+                    promptDownload(view.context, url, view.settings.userAgentString, null, null)
+                    return true
+                }
                 tab.loadError = false
                 return false
             }

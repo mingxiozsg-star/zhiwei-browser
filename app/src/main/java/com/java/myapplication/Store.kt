@@ -8,6 +8,7 @@ import org.json.JSONObject
 data class Bookmark(val title: String, val url: String, val time: Long = System.currentTimeMillis())
 data class HistoryItem(val title: String, val url: String, val time: Long = System.currentTimeMillis())
 data class Shortcut(val name: String, val url: String)
+data class DownloadItem(val name: String, val url: String, val time: Long = System.currentTimeMillis())
 
 /** 书签 & 历史 & 主页快捷方式持久化存储（JSON in SharedPreferences） */
 object Store {
@@ -15,6 +16,7 @@ object Store {
     val bookmarks = mutableStateListOf<Bookmark>()
     val history = mutableStateListOf<HistoryItem>()
     val shortcuts = mutableStateListOf<Shortcut>()
+    val downloads = mutableStateListOf<DownloadItem>()
 
     private val defaultShortcuts = listOf(
         Shortcut("必应", "https://www.bing.com"),
@@ -57,6 +59,12 @@ object Store {
                 val o = sa.getJSONObject(i)
                 shortcuts.add(Shortcut(o.optString("name"), o.optString("url")))
             }
+        }
+        // 下载记录
+        val da = JSONArray(prefs().getString("downloads", "[]") ?: "[]")
+        for (i in 0 until da.length()) {
+            val o = da.getJSONObject(i)
+            downloads.add(DownloadItem(o.optString("name"), o.optString("url"), o.optLong("time")))
         }
     }
 
@@ -110,6 +118,24 @@ object Store {
     }
 
     fun clearHistory() { history.clear(); prefs().edit().putString("history", "[]").apply() }
+
+    // ---------- 下载记录 ----------
+    fun addDownload(name: String, url: String) {
+        downloads.add(0, DownloadItem(name, url))
+        if (downloads.size > 200) repeat(downloads.size - 200) { downloads.removeAt(downloads.size - 1) }
+        saveDownloads()
+    }
+
+    fun removeDownload(d: DownloadItem) { downloads.remove(d); saveDownloads() }
+    fun clearDownloads() { downloads.clear(); prefs().edit().putString("downloads", "[]").apply() }
+
+    private fun saveDownloads() {
+        val arr = JSONArray()
+        downloads.take(200).forEach {
+            arr.put(JSONObject().put("name", it.name).put("url", it.url).put("time", it.time))
+        }
+        prefs().edit().putString("downloads", arr.toString()).apply()
+    }
 
     // ---------- 会话标签恢复 ----------
     fun saveSession(urls: List<String>) {

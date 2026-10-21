@@ -84,6 +84,7 @@ fun BrowserScreen(
     onOpenBookmarks: () -> Unit,
     onOpenHistory: () -> Unit,
     onOpenAi: () -> Unit,
+    onOpenDownloads: () -> Unit,
 ) {
     val context = LocalContext.current
     val tab = vm.current
@@ -222,7 +223,7 @@ fun BrowserScreen(
             onAction = { action ->
                 menuOpen = false
                 handleMenuAction(action, vm, tab, context,
-                    onOpenSettings, onOpenBookmarks, onOpenHistory, onOpenAi) { findBar = true }
+                    onOpenSettings, onOpenBookmarks, onOpenHistory, onOpenAi, onOpenDownloads) { findBar = true }
             }
         )
     }
@@ -233,7 +234,7 @@ fun BrowserScreen(
 
 private enum class MenuAction {
     HOME, NEW_TAB, BOOKMARK, BOOKMARKS, HISTORY, ADD_SHORTCUT,
-    FIND, TRANSLATE, DESKTOP, SHARE, COPY_LINK, AI, SETTINGS
+    FIND, TRANSLATE, DESKTOP, SHARE, COPY_LINK, AI, SETTINGS, DOWNLOADS
 }
 
 /** 底部弹出菜单面板：时间日期头 + 图标宫格 */
@@ -273,6 +274,7 @@ private fun MenuSheet(
             add(Triple(Icons.Filled.Add, "新建标签", MenuAction.NEW_TAB))
             add(Triple(Icons.Filled.Star, "书签", MenuAction.BOOKMARKS))
             add(Triple(Icons.Filled.DateRange, "历史记录", MenuAction.HISTORY))
+            add(Triple(Icons.Filled.List, "下载", MenuAction.DOWNLOADS))
             add(Triple(Icons.Filled.Settings, "设置", MenuAction.SETTINGS))
             if (tab != null && !tab.isHome) {
                 add(Triple(
@@ -334,6 +336,7 @@ private fun handleMenuAction(
     onOpenBookmarks: () -> Unit,
     onOpenHistory: () -> Unit,
     onOpenAi: () -> Unit,
+    onOpenDownloads: () -> Unit,
     onFind: () -> Unit,
 ) {
     when (action) {
@@ -342,6 +345,7 @@ private fun handleMenuAction(
         MenuAction.BOOKMARK -> tab?.let { Store.toggleBookmark(it.title, it.url) }
         MenuAction.BOOKMARKS -> onOpenBookmarks()
         MenuAction.HISTORY -> onOpenHistory()
+        MenuAction.DOWNLOADS -> onOpenDownloads()
         MenuAction.ADD_SHORTCUT -> tab?.let { if (it.url.isNotBlank()) Store.addShortcut(it.title, it.url) }
         MenuAction.FIND -> onFind()
         MenuAction.TRANSLATE -> tab?.webView?.loadUrl(Settings.pageTranslateUrl(tab.url))

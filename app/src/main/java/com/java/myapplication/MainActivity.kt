@@ -30,6 +30,7 @@ import androidx.lifecycle.ViewModelProvider
 import com.java.myapplication.ui.AiSheet
 import com.java.myapplication.ui.BookmarksScreen
 import com.java.myapplication.ui.BrowserScreen
+import com.java.myapplication.ui.DownloadsScreen
 import com.java.myapplication.ui.HistoryScreen
 import com.java.myapplication.ui.OnboardingScreen
 import com.java.myapplication.ui.SettingsScreen
@@ -119,7 +120,7 @@ class MainActivity : ComponentActivity() {
                     label = "screenSwitch"
                 ) { scr ->
                 // 子页面（设置/书签/历史）系统返回键 → 带动画回主页
-                if (scr == "settings" || scr == "bookmarks" || scr == "history") {
+                if (scr == "settings" || scr == "bookmarks" || scr == "history" || scr == "downloads") {
                     BackHandler { navDir = -1; screen = "browser" }
                 }
                 when (scr) {
@@ -140,6 +141,7 @@ class MainActivity : ComponentActivity() {
                         onBack = { navDir = -1; screen = "browser" },
                         onOpen = { url -> vm.current?.webView?.loadUrl(url) ?: vm.addTab(this@MainActivity, url); navDir = -1; screen = "browser" }
                     )
+                    "downloads" -> DownloadsScreen { navDir = -1; screen = "browser" }
                     else -> {
                         Scaffold(Modifier.fillMaxSize()) { padding ->
                             BrowserScreen(
@@ -148,6 +150,7 @@ class MainActivity : ComponentActivity() {
                                 onOpenBookmarks = { navDir = 1; screen = "bookmarks" },
                                 onOpenHistory = { navDir = 1; screen = "history" },
                                 onOpenAi = { aiOpen = true },
+                                onOpenDownloads = { navDir = 1; screen = "downloads" },
                             )
                             // padding 交给边到边布局
                             @Suppress("UNUSED_EXPRESSION") padding

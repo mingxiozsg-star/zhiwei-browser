@@ -34,9 +34,9 @@ object Settings {
         set(v) { p.edit().putBoolean("restore_tabs", v).apply(); bump() }
 
     // ---------- 外观 ----------
-    /** 0=跟随系统 1=浅色 2=深色 */
+    /** 0=跟随系统 1=浅色 2=深色（默认深色） */
     var darkTheme: Int
-        get() = p.getInt("dark_theme", 0)
+        get() = p.getInt("dark_theme", 2)
         set(v) { p.edit().putInt("dark_theme", v).apply(); bump() }
 
     var forceDarkWeb: Boolean
@@ -67,6 +67,116 @@ object Settings {
     var geoAllowed: Boolean
         get() = p.getBoolean("geo_allowed", false)
         set(v) { p.edit().putBoolean("geo_allowed", v).apply(); bump() }
+
+    // ---------- 隐私与安全（扩展，默认偏保护侧） ----------
+    /** 追踪保护：0=关闭 1=标准 2=严格（默认严格） */
+    var trackingProtection: Int
+        get() = p.getInt("tracking_protection", 2)
+        set(v) { p.edit().putInt("tracking_protection", v).apply(); bump() }
+
+    /** HTTPS-Only 模式（默认开启，http 站点先警告） */
+    var httpsOnly: Boolean
+        get() = p.getBoolean("https_only", true)
+        set(v) { p.edit().putBoolean("https_only", v).apply(); bump() }
+
+    /** DoH 安全 DNS（默认开启） */
+    var dohEnabled: Boolean
+        get() = p.getBoolean("doh_enabled", true)
+        set(v) { p.edit().putBoolean("doh_enabled", v).apply(); bump() }
+
+    /** 遥测与数据收集（默认关闭） */
+    var telemetry: Boolean
+        get() = p.getBoolean("telemetry", false)
+        set(v) { p.edit().putBoolean("telemetry", v).apply(); bump() }
+
+    /** 崩溃报告自动发送（默认关闭） */
+    var crashReports: Boolean
+        get() = p.getBoolean("crash_reports", false)
+        set(v) { p.edit().putBoolean("crash_reports", v).apply(); bump() }
+
+    /** 不安全下载拦截（默认开启） */
+    var blockInsecureDownloads: Boolean
+        get() = p.getBoolean("block_insecure_downloads", true)
+        set(v) { p.edit().putBoolean("block_insecure_downloads", v).apply(); bump() }
+
+    // ---------- 下载（与流式落盘模块对齐） ----------
+    /** 每次下载询问保存位置（默认关闭，用固定目录） */
+    var dlAskLocation: Boolean
+        get() = p.getBoolean("dl_ask_location", false)
+        set(v) { p.edit().putBoolean("dl_ask_location", v).apply(); bump() }
+
+    /** 并行下载数量上限 */
+    var dlMaxParallel: Int
+        get() = p.getInt("dl_max_parallel", 4)
+        set(v) { p.edit().putInt("dl_max_parallel", v).apply(); bump() }
+
+    /** 断点续传（默认开启） */
+    var dlResume: Boolean
+        get() = p.getBoolean("dl_resume", true)
+        set(v) { p.edit().putBoolean("dl_resume", v).apply(); bump() }
+
+    /** 下载完成动作：0=无操作 1=打开文件 2=打开所在文件夹 */
+    var dlDoneAction: Int
+        get() = p.getInt("dl_done_action", 0)
+        set(v) { p.edit().putInt("dl_done_action", v).apply(); bump() }
+
+    /** 危险文件类型警告（默认开启） */
+    var dlDangerWarn: Boolean
+        get() = p.getBoolean("dl_danger_warn", true)
+        set(v) { p.edit().putBoolean("dl_danger_warn", v).apply(); bump() }
+
+    /** 下载完成通知（默认开启） */
+    var dlNotify: Boolean
+        get() = p.getBoolean("dl_notify", true)
+        set(v) { p.edit().putBoolean("dl_notify", v).apply(); bump() }
+
+    // ---------- AI 功能控制 ----------
+    /** 全局阻止 AI 增强：开启后所有 AI 入口与弹窗消失 */
+    var aiBlocked: Boolean
+        get() = p.getBoolean("ai_blocked", false)
+        set(v) { p.edit().putBoolean("ai_blocked", v).apply(); bump() }
+
+    var aiTranslate: Boolean
+        get() = p.getBoolean("ai_translate", true)
+        set(v) { p.edit().putBoolean("ai_translate", v).apply(); bump() }
+
+    var aiLinkPreview: Boolean
+        get() = p.getBoolean("ai_link_preview", false)
+        set(v) { p.edit().putBoolean("ai_link_preview", v).apply(); bump() }
+
+    var aiTabGroup: Boolean
+        get() = p.getBoolean("ai_tab_group", false)
+        set(v) { p.edit().putBoolean("ai_tab_group", v).apply(); bump() }
+
+    var aiPdfAlt: Boolean
+        get() = p.getBoolean("ai_pdf_alt", false)
+        set(v) { p.edit().putBoolean("ai_pdf_alt", v).apply(); bump() }
+
+    var aiSidebar: Boolean
+        get() = p.getBoolean("ai_sidebar", true)
+        set(v) { p.edit().putBoolean("ai_sidebar", v).apply(); bump() }
+
+    // ---------- 启动与标签页 ----------
+    /** 关闭多个标签页时确认 */
+    var confirmCloseTabs: Boolean
+        get() = p.getBoolean("confirm_close_tabs", true)
+        set(v) { p.edit().putBoolean("confirm_close_tabs", v).apply(); bump() }
+
+    /** 关闭最后一个标签页时退出浏览器 */
+    var exitOnLastTab: Boolean
+        get() = p.getBoolean("exit_on_last_tab", false)
+        set(v) { p.edit().putBoolean("exit_on_last_tab", v).apply(); bump() }
+
+    /** 启动时检查是否为默认浏览器 */
+    var checkDefaultBrowser: Boolean
+        get() = p.getBoolean("check_default_browser", false)
+        set(v) { p.edit().putBoolean("check_default_browser", v).apply(); bump() }
+
+    // ---------- 搜索 ----------
+    /** 地址栏搜索建议 */
+    var searchSuggest: Boolean
+        get() = p.getBoolean("search_suggest", true)
+        set(v) { p.edit().putBoolean("search_suggest", v).apply(); bump() }
 
     // ---------- 浏览 ----------
     var jsEnabled: Boolean

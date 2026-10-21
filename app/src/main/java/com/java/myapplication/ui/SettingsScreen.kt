@@ -73,14 +73,19 @@ fun SettingsScreen(vm: BrowserViewModel, onBack: () -> Unit) {
     }
 
     val title = when (page) {
-        "general" -> "通用"
-        "appearance" -> "外观与主页"
+        "startup" -> "启动与标签页"
+        "appearance" -> "外观"
+        "search" -> "搜索引擎"
         "privacy" -> "隐私与安全"
-        "browsing" -> "浏览"
-        "ai" -> "AI 助手"
-        "translate" -> "翻译"
+        "ai" -> "AI 功能控制"
+        "downloads" -> "下载"
+        "language" -> "语言与输入"
+        "accessibility" -> "无障碍"
+        "system" -> "系统与性能"
+        "opensource" -> "开源特有项"
+        "developer" -> "开发者功能"
         "shortcuts" -> "主页快捷方式"
-        "about" -> "关于"
+        "about" -> "重置与关于"
         else -> "设置"
     }
 
@@ -99,12 +104,17 @@ fun SettingsScreen(vm: BrowserViewModel, onBack: () -> Unit) {
         Column(Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState())) {
             when (page) {
                 "root" -> SettingsRoot { page = it }
-                "general" -> GeneralPage()
+                "startup" -> StartupPage()
                 "appearance" -> AppearancePage { page = "shortcuts" }
+                "search" -> SearchPage()
                 "privacy" -> PrivacyPage(vm)
-                "browsing" -> BrowsingPage()
-                "ai" -> AiPage()
-                "translate" -> TranslatePage()
+                "ai" -> AiControlPage()
+                "downloads" -> DownloadsPage()
+                "language" -> LanguagePage()
+                "accessibility" -> AccessibilityPage()
+                "system" -> SystemPage()
+                "opensource" -> OpenSourcePage()
+                "developer" -> DeveloperPage()
                 "shortcuts" -> ShortcutsPage()
                 "about" -> AboutPage(vm)
             }
@@ -117,14 +127,64 @@ fun SettingsScreen(vm: BrowserViewModel, onBack: () -> Unit) {
 
 @Composable
 private fun SettingsRoot(onOpen: (String) -> Unit) {
-    Column(Modifier.padding(vertical = 8.dp)) {
-        GroupItem("通用", "搜索引擎 / 主页 / 启动") { onOpen("general") }
-        GroupItem("外观与主页", "主题 / 搜索框样式 / 主页背景") { onOpen("appearance") }
-        GroupItem("隐私与安全", "无痕 / Cookie / 清除数据") { onOpen("privacy") }
-        GroupItem("浏览", "JavaScript / 广告拦截 / 桌面模式") { onOpen("browsing") }
-        GroupItem("AI 助手", "API / 模型 / 提示词") { onOpen("ai") }
-        GroupItem("翻译", "目标语言") { onOpen("translate") }
-        GroupItem("关于", "版本信息") { onOpen("about") }
+    Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+        Spacer(Modifier.height(28.dp))
+        Text("zhiwei browser", style = MaterialTheme.typography.headlineMedium,
+            color = MaterialTheme.colorScheme.onBackground)
+        Text("设置", style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Spacer(Modifier.height(12.dp))
+
+        RoamGroup("基本") {
+            RoamItem("🚀", "启动与标签页", "启动行为 / 恢复会话 / 默认浏览器") { onOpen("startup") }
+            RoamItem("🎨", "外观", "主题 / 搜索框 / 主页背景") { onOpen("appearance") }
+            RoamItem("🔍", "搜索引擎", "默认引擎 / 搜索建议") { onOpen("search") }
+            RoamItem("⬇️", "下载", "保存位置 / 续传 / 完成动作") { onOpen("downloads") }
+        }
+        RoamGroup("安全") {
+            RoamItem("🛡️", "隐私与安全", "追踪保护 / HTTPS-Only / DoH") { onOpen("privacy") }
+        }
+        RoamGroup("智能") {
+            RoamItem("🤖", "AI 功能控制", "总开关 / 提供商 / 子功能") { onOpen("ai") }
+            RoamItem("🌐", "语言与输入", "翻译 / 目标语言") { onOpen("language") }
+            RoamItem("♿", "无障碍", "文字缩放 / 强制深色") { onOpen("accessibility") }
+        }
+        RoamGroup("高级") {
+            RoamItem("⚙️", "系统与性能", "JavaScript / 桌面模式 / 缓存") { onOpen("system") }
+            RoamItem("🧩", "开源特有项", "广告拦截 / 同步 / 许可证") { onOpen("opensource") }
+            RoamItem("🧪", "开发者功能", "实验性功能（含风险标注）") { onOpen("developer") }
+            RoamItem("ℹ️", "重置与关于", "版本 / 更新 / 重置") { onOpen("about") }
+        }
+    }
+}
+
+@Composable
+private fun RoamGroup(label: String, content: @Composable () -> Unit) {
+    Text(label, style = MaterialTheme.typography.titleSmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(start = 8.dp, top = 22.dp, bottom = 8.dp))
+    Surface(
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
+        shape = RoundedCornerShape(20.dp)
+    ) { Column { content() } }
+}
+
+@Composable
+private fun RoamItem(icon: String, title: String, subtitle: String, onClick: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().clickable(onClick = onClick)
+            .padding(horizontal = 18.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(icon, style = MaterialTheme.typography.titleLarge)
+        Spacer(Modifier.width(14.dp))
+        Column(Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.bodyLarge)
+            Text(subtitle, style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Icon(Icons.Filled.KeyboardArrowRight, null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
@@ -148,14 +208,13 @@ private fun GroupItem(title: String, subtitle: String, onClick: () -> Unit) {
 // ================= 二级页面 =================
 
 @Composable
-private fun GeneralPage() {
+private fun StartupPage() {
     Settings.version.intValue
-    ChoiceSetting(
-        "搜索引擎", Settings.searchEngine,
-        listOf("bing" to "必应", "baidu" to "百度", "google" to "Google", "duckduckgo" to "DuckDuckGo", "sogou" to "搜狗")
-    ) { Settings.searchEngine = it }
-    TextSetting("自定义主页（留空=内置主页）", Settings.homepage) { Settings.homepage = it }
     SwitchSetting("启动时恢复上次标签", Settings.restoreTabs) { Settings.restoreTabs = it }
+    TextSetting("自定义主页（留空=内置主页）", Settings.homepage) { Settings.homepage = it }
+    SwitchSetting("关闭多个标签页时确认", Settings.confirmCloseTabs) { Settings.confirmCloseTabs = it }
+    SwitchSetting("关闭最后一个标签页时退出", Settings.exitOnLastTab) { Settings.exitOnLastTab = it }
+    SwitchSetting("启动时检查默认浏览器", Settings.checkDefaultBrowser) { Settings.checkDefaultBrowser = it }
 
     // 设为默认浏览器：优先走系统角色请求，失败回退到默认应用设置页
     val context = LocalContext.current
@@ -174,6 +233,16 @@ private fun GeneralPage() {
             android.widget.Toast.makeText(context, "无法打开系统设置：${e.message}", android.widget.Toast.LENGTH_SHORT).show()
         }
     }
+}
+
+@Composable
+private fun SearchPage() {
+    Settings.version.intValue
+    ChoiceSetting(
+        "默认搜索引擎", Settings.searchEngine,
+        listOf("bing" to "必应", "baidu" to "百度", "google" to "Google", "duckduckgo" to "DuckDuckGo", "sogou" to "搜狗")
+    ) { Settings.searchEngine = it }
+    SwitchSetting("地址栏搜索建议", Settings.searchSuggest) { Settings.searchSuggest = it }
 }
 
 @Composable
@@ -340,16 +409,32 @@ private fun ShortcutsPage() {
         )
     }
 }
-
 @Composable
 private fun PrivacyPage(vm: BrowserViewModel) {
     Settings.version.intValue
     val context = LocalContext.current
-    SwitchSetting("无痕模式（不记录历史）", Settings.incognito) { Settings.incognito = it }
+
+    SectionTitle("追踪与网络保护")
+    ChoiceSetting(
+        "追踪保护等级", Settings.trackingProtection.toString(),
+        listOf("0" to "关闭", "1" to "标准", "2" to "严格（默认）")
+    ) { Settings.trackingProtection = it.toInt() }
+    SwitchSetting("HTTPS-Only 模式（http 先警告）", Settings.httpsOnly) { Settings.httpsOnly = it }
+    SwitchSetting("DoH 安全 DNS", Settings.dohEnabled) { Settings.dohEnabled = it }
     SwitchSetting("发送“请勿追踪”请求", Settings.doNotTrack) { Settings.doNotTrack = it }
+    SwitchSetting("不安全下载拦截", Settings.blockInsecureDownloads) { Settings.blockInsecureDownloads = it }
+
+    SectionTitle("Cookie 与站点")
+    SwitchSetting("无痕模式（不记录历史）", Settings.incognito) { Settings.incognito = it }
     SwitchSetting("接受 Cookie", Settings.cookiesEnabled) { Settings.cookiesEnabled = it }
     SwitchSetting("允许第三方 Cookie", Settings.thirdPartyCookies) { Settings.thirdPartyCookies = it }
     SwitchSetting("允许网站获取位置", Settings.geoAllowed) { Settings.geoAllowed = it }
+
+    SectionTitle("数据收集（默认关闭）")
+    SwitchSetting("遥测和数据收集", Settings.telemetry) { Settings.telemetry = it }
+    SwitchSetting("崩溃报告自动发送", Settings.crashReports) { Settings.crashReports = it }
+
+    SectionTitle("数据清理")
 
     var showClear by remember { mutableStateOf(false) }
     Row(
@@ -377,36 +462,120 @@ private fun PrivacyPage(vm: BrowserViewModel) {
 }
 
 @Composable
-private fun BrowsingPage() {
+private fun SystemPage() {
     Settings.version.intValue
+    SectionTitle("网页引擎")
     SwitchSetting("启用 JavaScript", Settings.jsEnabled) { Settings.jsEnabled = it }
     SwitchSetting("DOM 存储", Settings.domStorage) { Settings.domStorage = it }
     SwitchSetting("加载图片", Settings.loadImages) { Settings.loadImages = it }
     SwitchSetting("桌面模式（电脑版 UA）", Settings.desktopMode) { Settings.desktopMode = it }
-    SwitchSetting("广告拦截", Settings.adBlock) { Settings.adBlock = it }
-    SwitchSetting("拦截弹窗", Settings.blockPopups) { Settings.blockPopups = it }
     SwitchSetting("下拉刷新", Settings.pullRefresh) { Settings.pullRefresh = it }
 }
 
 @Composable
-private fun AiPage() {
+private fun OpenSourcePage() {
     Settings.version.intValue
-    Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
-        AiProviderPicker()
+    SectionTitle("内置拦截")
+    SwitchSetting("广告拦截", Settings.adBlock) { Settings.adBlock = it }
+    SwitchSetting("拦截弹窗", Settings.blockPopups) { Settings.blockPopups = it }
+    Text("提示：若你通过其他方式（如私人 DNS）已做拦截，可关闭内置拦截避免重复过滤。",
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
+
+    SectionTitle("同步")
+    Text("当前版本不含云同步；书签/历史仅保存在本机。后续版本将支持本地加密备份与自建同步，不绑定单一厂商。",
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
+
+    SectionTitle("开源")
+    val context = LocalContext.current
+    GroupItem("开源许可证", "MIT License / 第三方组件") {
+        runCatching {
+            context.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW,
+                android.net.Uri.parse("https://github.com/mingxiozsg-star/zhiwei-browser")))
+        }
     }
-    TextSetting("API Base", Settings.aiBase) { Settings.aiBase = it; Settings.aiProvider = "自定义 / 第三方中转站" }
-    TextSetting("API Key", Settings.aiKey, secret = true) { Settings.aiKey = it }
-    TextSetting("模型", Settings.aiModel) { Settings.aiModel = it; Settings.aiProvider = "自定义 / 第三方中转站" }
-    TextSetting("系统提示词", Settings.aiPrompt, singleLine = false) { Settings.aiPrompt = it }
 }
 
 @Composable
-private fun TranslatePage() {
+private fun DeveloperPage() {
+    Settings.version.intValue
+    Text("以下均为实验性功能：不稳定，可能随时移除。", style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.error,
+        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
+    SwitchSetting("网页强制深色（实验性·可能破版）", Settings.forceDarkWeb) { Settings.forceDarkWeb = it }
+}
+
+@Composable
+private fun DownloadsPage() {
+    Settings.version.intValue
+    Text("下载文件统一保存到：内部存储/下载/知微浏览器/",
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
+    SwitchSetting("每次下载询问保存位置", Settings.dlAskLocation) { Settings.dlAskLocation = it }
+    ChoiceSetting(
+        "并行下载数量上限", Settings.dlMaxParallel.toString(),
+        listOf("1" to "1", "2" to "2", "4" to "4（默认）", "8" to "8")
+    ) { Settings.dlMaxParallel = it.toInt() }
+    SwitchSetting("断点续传", Settings.dlResume) { Settings.dlResume = it }
+    ChoiceSetting(
+        "下载完成时动作", Settings.dlDoneAction.toString(),
+        listOf("0" to "无操作（默认）", "1" to "打开文件", "2" to "打开所在文件夹")
+    ) { Settings.dlDoneAction = it.toInt() }
+    SwitchSetting("危险文件类型警告", Settings.dlDangerWarn) { Settings.dlDangerWarn = it }
+    SwitchSetting("下载完成通知", Settings.dlNotify) { Settings.dlNotify = it }
+}
+
+@Composable
+private fun AccessibilityPage() {
+    Settings.version.intValue
+    SliderSetting("网页文字缩放", Settings.textZoom, 50, 200, "%d%%") { Settings.textZoom = it }
+    SwitchSetting("网页强制深色", Settings.forceDarkWeb) { Settings.forceDarkWeb = it }
+}
+
+@Composable
+private fun LanguagePage() {
     Settings.version.intValue
     ChoiceSetting(
-        "目标语言", Settings.translateTarget,
+        "翻译目标语言", Settings.translateTarget,
         listOf("zh-CN" to "简体中文", "zh-TW" to "繁體中文", "en" to "English", "ja" to "日本語", "ko" to "한국어", "fr" to "Français", "de" to "Deutsch", "ru" to "Русский", "es" to "Español")
     ) { Settings.translateTarget = it }
+    SwitchSetting("自动翻译英文页面", Settings.autoTranslate) { Settings.autoTranslate = it }
+}
+
+@Composable
+private fun AiControlPage() {
+    Settings.version.intValue
+    SectionTitle("总开关")
+    SwitchSetting("阻止 AI 增强（关闭所有 AI 入口与提示）", Settings.aiBlocked) { Settings.aiBlocked = it }
+    if (!Settings.aiBlocked) {
+        SectionTitle("子功能")
+        SwitchSetting("侧边栏 AI 助手", Settings.aiSidebar) { Settings.aiSidebar = it }
+        SwitchSetting("网页翻译（AI 驱动）", Settings.aiTranslate) { Settings.aiTranslate = it }
+        SwitchSetting("链接预览摘要", Settings.aiLinkPreview) { Settings.aiLinkPreview = it }
+        SwitchSetting("标签页分组建议", Settings.aiTabGroup) { Settings.aiTabGroup = it }
+        SwitchSetting("PDF 图像替代文本", Settings.aiPdfAlt) { Settings.aiPdfAlt = it }
+        Text("AI 不绑定单一提供商，下方可自由切换或自建中转。处理页面内容时，数据将发送至所选提供商。",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
+        SectionTitle("提供商配置")
+        Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+            AiProviderPicker()
+        }
+        TextSetting("API Base", Settings.aiBase) { Settings.aiBase = it; Settings.aiProvider = "自定义 / 第三方中转站" }
+        TextSetting("API Key", Settings.aiKey, secret = true) { Settings.aiKey = it }
+        TextSetting("模型", Settings.aiModel) { Settings.aiModel = it; Settings.aiProvider = "自定义 / 第三方中转站" }
+        TextSetting("系统提示词", Settings.aiPrompt, singleLine = false) { Settings.aiPrompt = it }
+    } else {
+        Text("已阻止全部 AI 增强：AI 菜单入口、总结/翻译面板与相关提示均不再出现。",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(16.dp))
+    }
 }
 
 @Composable

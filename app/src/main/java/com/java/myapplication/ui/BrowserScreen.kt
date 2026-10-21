@@ -289,7 +289,7 @@ private fun MenuSheet(
                     if (Settings.desktopMode) "手机模式" else "桌面模式", MenuAction.DESKTOP))
                 add(Triple(Icons.Filled.Add, "加到主页", MenuAction.ADD_SHORTCUT))
             }
-            add(Triple(Icons.Filled.Face, "AI 助手", MenuAction.AI))
+            if (!Settings.aiBlocked) add(Triple(Icons.Filled.Face, "AI 助手", MenuAction.AI))
         }
 
         items.chunked(5).forEach { row ->

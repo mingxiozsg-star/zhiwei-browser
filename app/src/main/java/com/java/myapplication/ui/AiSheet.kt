@@ -19,10 +19,12 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
@@ -332,14 +334,26 @@ private fun ChatPane(vm: BrowserViewModel, onOpenSettings: () -> Unit) {
                 ) { Text("📎", style = MaterialTheme.typography.titleMedium) }
             }
             Spacer(Modifier.width(6.dp))
-            OutlinedTextField(
+            // BasicTextField + 装饰盒：绕开 OutlinedTextField 280dp 最小宽度导致的横向溢出
+            BasicTextField(
                 value = input,
                 onValueChange = { input = it },
                 modifier = Modifier.weight(1f).heightIn(min = 52.dp, max = 120.dp),
-                placeholder = { Text("问点什么…") },
+                textStyle = MaterialTheme.typography.bodyLarge.copy(color = MaterialTheme.colorScheme.onSurface),
                 maxLines = 4,
                 enabled = !loading
-            )
+            ) { inner ->
+                OutlinedTextFieldDefaults.DecorationBox(
+                    value = input,
+                    innerTextField = inner,
+                    enabled = !loading,
+                    singleLine = false,
+                    visualTransformation = androidx.compose.ui.text.input.VisualTransformation.None,
+                    interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
+                    placeholder = { Text("问点什么…") },
+                    contentPadding = OutlinedTextFieldDefaults.contentPadding(top = 14.dp, bottom = 14.dp)
+                )
+            }
             Spacer(Modifier.width(6.dp))
             Button(
                 onClick = {

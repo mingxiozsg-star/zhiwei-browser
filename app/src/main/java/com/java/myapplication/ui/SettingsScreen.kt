@@ -106,7 +106,7 @@ fun SettingsScreen(vm: BrowserViewModel, onBack: () -> Unit) {
                 "ai" -> AiPage()
                 "translate" -> TranslatePage()
                 "shortcuts" -> ShortcutsPage()
-                "about" -> AboutPage()
+                "about" -> AboutPage(vm)
             }
             Spacer(Modifier.height(48.dp))
         }
@@ -156,6 +156,24 @@ private fun GeneralPage() {
     ) { Settings.searchEngine = it }
     TextSetting("自定义主页（留空=内置主页）", Settings.homepage) { Settings.homepage = it }
     SwitchSetting("启动时恢复上次标签", Settings.restoreTabs) { Settings.restoreTabs = it }
+
+    // 设为默认浏览器：优先走系统角色请求，失败回退到默认应用设置页
+    val context = LocalContext.current
+    val defaultRoleLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { }
+    GroupItem("设为默认浏览器", "让其他应用的链接默认用知微浏览器打开") {
+        try {
+            if (android.os.Build.VERSION.SDK_INT >= 29) {
+                val rm = context.getSystemService(android.app.role.RoleManager::class.java)
+                if (rm != null && rm.isRoleAvailable(android.app.role.RoleManager.ROLE_BROWSER)) {
+                    defaultRoleLauncher.launch(rm.createRequestRoleIntent(android.app.role.RoleManager.ROLE_BROWSER))
+                    return@GroupItem
+                }
+            }
+            context.startActivity(android.content.Intent(android.provider.Settings.ACTION_MANAGE_DEFAULT_APPS_SETTINGS))
+        } catch (e: Exception) {
+            android.widget.Toast.makeText(context, "无法打开系统设置：${e.message}", android.widget.Toast.LENGTH_SHORT).show()
+        }
+    }
 }
 
 @Composable
@@ -392,7 +410,7 @@ private fun TranslatePage() {
 }
 
 @Composable
-private fun AboutPage() {
+private fun AboutPage(vm: BrowserViewModel) {
     val context = LocalContext.current
     val scope = androidx.compose.runtime.rememberCoroutineScope()
     var checking by remember { mutableStateOf(false) }
@@ -442,13 +460,23 @@ private fun AboutPage() {
                         val body = conn.inputStream.bufferedReader().readText()
                         val json = org.json.JSONObject(body)
                         val tag = json.optString("tag_name").removePrefix("v")
-                        val html = json.optString("html_url")
+                        // 直接取 Release 里的 APK 附件地址，应用内下载，不跳外部浏览器
+                        var apkUrl = json.optString("html_url")
+                        val assets = json.optJSONArray("assets")
+                        if (assets != null) {
+                            for (i in 0 until assets.length()) {
+                                val a = assets.getJSONObject(i)
+                                if (a.optString("name").endsWith(".apk")) {
+                                    apkUrl = a.optString("browser_download_url"); break
+                                }
+                            }
+                        }
                         val cur = com.java.myapplication.BuildConfig.VERSION_NAME
                         launch(kotlinx.coroutines.Dispatchers.Main) {
                             checking = false
                             if (tag.isNotEmpty() && tag != cur) {
                                 updateMsg = "发现新版本 v$tag（当前 v$cur）"
-                                updateUrl = html
+                                updateUrl = apkUrl
                             } else updateMsg = "已是最新版本（v$cur）"
                         }
                     } catch (e: Exception) {
@@ -477,8 +505,9 @@ private fun AboutPage() {
             Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
             updateUrl?.let { url ->
                 TextButton(onClick = {
-                    context.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url)))
-                }) { Text("前往下载", style = MaterialTheme.typography.labelSmall) }
+                    // 应用内直接下载 APK，不跳转其他浏览器
+                    vm.promptDownload(context, url, null, null, "application/vnd.android.package-archive")
+                }) { Text("去下载", style = MaterialTheme.typography.labelSmall) }
             }
         }
 

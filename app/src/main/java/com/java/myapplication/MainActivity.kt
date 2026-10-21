@@ -70,7 +70,7 @@ class MainActivity : ComponentActivity() {
 
         // 恢复会话或新建
         if (vm.tabs.isEmpty()) {
-            val external = intent?.dataString
+            val external = intent?.let { extractUrl(it) }
             val restored = if (Settings.restoreTabs) Store.restoreSession() else emptyList()
             when {
                 external != null -> vm.addTab(this, external)
@@ -190,7 +190,19 @@ class MainActivity : ComponentActivity() {
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
-        intent.dataString?.let { vm.addTab(this, it) }
+        extractUrl(intent)?.let { vm.addTab(this, it) }
+    }
+
+    /** 从 VIEW / SEND Intent 中提取要打开的 URL */
+    private fun extractUrl(intent: Intent): String? {
+        intent.dataString?.takeIf { it.startsWith("http") }?.let { return it }
+        if (intent.action == Intent.ACTION_SEND) {
+            val text = intent.getStringExtra(Intent.EXTRA_TEXT) ?: return null
+            // 分享文本中可能夹杂描述，提取第一个 http(s) 链接
+            val m = Regex("https?://\\S+").find(text) ?: return null
+            return m.value
+        }
+        return null
     }
 
     override fun onPause() {

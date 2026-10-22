@@ -23,6 +23,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -42,6 +43,7 @@ fun DownloadsScreen(onBack: () -> Unit) {
     val fmt = SimpleDateFormat("MM-dd HH:mm", Locale.getDefault())
 
     Scaffold(
+        containerColor = MaterialTheme.colorScheme.background,
         topBar = {
             TopAppBar(
                 title = { Text("下载") },
@@ -52,7 +54,8 @@ fun DownloadsScreen(onBack: () -> Unit) {
                     if (Store.downloads.isNotEmpty()) {
                         TextButton(onClick = { Store.clearDownloads() }) { Text("清空") }
                     }
-                }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)
             )
         }
     ) { padding ->

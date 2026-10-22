@@ -14,6 +14,8 @@ import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
@@ -114,8 +116,8 @@ class MainActivity : ComponentActivity() {
                     targetState = screen,
                     transitionSpec = {
                         val dir = navDir
-                        (fadeIn(tween(240)) + slideInHorizontally(tween(240)) { dir * it / 5 })
-                            .togetherWith(fadeOut(tween(180)) + slideOutHorizontally(tween(180)) { -dir * it / 5 })
+                        (fadeIn(tween(260)) + slideInHorizontally(tween(280)) { dir * it / 4 } + scaleIn(tween(280), initialScale = 0.94f))
+                            .togetherWith(fadeOut(tween(200)) + slideOutHorizontally(tween(200)) { -dir * it / 4 } + scaleOut(tween(200), targetScale = 0.96f))
                     },
                     label = "screenSwitch"
                 ) { scr ->

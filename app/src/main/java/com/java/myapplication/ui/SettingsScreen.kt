@@ -6,6 +6,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -43,6 +44,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -86,10 +88,11 @@ fun SettingsScreen(vm: BrowserViewModel, onBack: () -> Unit) {
         "developer" -> "开发者功能"
         "shortcuts" -> "主页快捷方式"
         "about" -> "重置与关于"
+        "update" -> "软件更新"
         else -> "设置"
     }
-
     Scaffold(
+        containerColor = MaterialTheme.colorScheme.background,
         topBar = {
             TopAppBar(
                 title = { Text(title) },
@@ -97,12 +100,28 @@ fun SettingsScreen(vm: BrowserViewModel, onBack: () -> Unit) {
                     IconButton(onClick = { if (page == "root") onBack() else page = "root" }) {
                         Icon(Icons.Filled.ArrowBack, "返回")
                     }
-                }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.background,
+                    scrolledContainerColor = MaterialTheme.colorScheme.background
+                )
             )
         }
     ) { padding ->
-        Column(Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState())) {
-            when (page) {
+        Column(Modifier.fillMaxSize().padding(padding)) {
+            androidx.compose.animation.AnimatedContent(
+                targetState = page,
+                transitionSpec = {
+                    (androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(260)) +
+                        androidx.compose.animation.slideInHorizontally(androidx.compose.animation.core.tween(260)) { it / 6 })
+                        .togetherWith(
+                            androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(200)) +
+                                androidx.compose.animation.slideOutHorizontally(androidx.compose.animation.core.tween(200)) { -it / 6 })
+                },
+                label = "settingsPage"
+            ) { target ->
+                Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+            when (target) {
                 "root" -> SettingsRoot { page = it }
                 "startup" -> StartupPage()
                 "appearance" -> AppearancePage { page = "shortcuts" }
@@ -116,9 +135,12 @@ fun SettingsScreen(vm: BrowserViewModel, onBack: () -> Unit) {
                 "opensource" -> OpenSourcePage()
                 "developer" -> DeveloperPage()
                 "shortcuts" -> ShortcutsPage()
-                "about" -> AboutPage(vm)
+                "about" -> AboutPage(vm, onOpenUpdate = { page = "update" })
+                "update" -> UpdatePage(vm)
             }
             Spacer(Modifier.height(48.dp))
+                }
+            }
         }
     }
 }
@@ -579,13 +601,136 @@ private fun AiControlPage() {
 }
 
 @Composable
-private fun AboutPage(vm: BrowserViewModel) {
+private fun UpdatePage(vm: BrowserViewModel) {
     val context = LocalContext.current
     val scope = androidx.compose.runtime.rememberCoroutineScope()
     var checking by remember { mutableStateOf(false) }
     var updateMsg by remember { mutableStateOf<String?>(null) }
     var updateUrl by remember { mutableStateOf<String?>(null) }
+    var latestTag by remember { mutableStateOf<String?>(null) }
 
+    Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
+        Spacer(Modifier.height(20.dp))
+        // ---------- 大圆角渐变卡片 ----------
+        Box(
+            Modifier.fillMaxWidth().height(420.dp)
+                .clip(RoundedCornerShape(32.dp))
+                .background(
+                    Brush.verticalGradient(
+                        listOf(Color(0xFF7B5CF0), Color(0xFFE8809A), Color(0xFFF2A97E))
+                    )
+                )
+        ) {
+            Column(
+                Modifier.fillMaxSize().padding(24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Spacer(Modifier.weight(1f))
+                Text(
+                    "zhiwei browser",
+                    style = MaterialTheme.typography.displaySmall,
+                    color = Color.White
+                )
+                Spacer(Modifier.weight(1f))
+                Text(
+                    "V${com.java.myapplication.BuildConfig.VERSION_NAME} | ${com.java.myapplication.BuildConfig.BUILD_TIME}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Color.White.copy(alpha = 0.85f)
+                )
+                latestTag?.let {
+                    Text(
+                        "最新版本：v$it",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color.White
+                    )
+                }
+                Spacer(Modifier.height(16.dp))
+                Surface(
+                    onClick = {
+                        if (checking) return@Surface
+                        checking = true; updateMsg = null; updateUrl = null; latestTag = null
+                        scope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                            try {
+                                val conn = java.net.URL("https://api.github.com/repos/mingxiozsg-star/zhiwei-browser/releases/latest")
+                                    .openConnection() as java.net.HttpURLConnection
+                                conn.connectTimeout = 10000; conn.readTimeout = 10000
+                                conn.setRequestProperty("Accept", "application/vnd.github+json")
+                                val body = conn.inputStream.bufferedReader().readText()
+                                val json = org.json.JSONObject(body)
+                                val tag = json.optString("tag_name").removePrefix("v")
+                                var apkUrl = json.optString("html_url")
+                                val assets = json.optJSONArray("assets")
+                                if (assets != null) {
+                                    for (i in 0 until assets.length()) {
+                                        val a = assets.getJSONObject(i)
+                                        if (a.optString("name").endsWith(".apk")) {
+                                            apkUrl = a.optString("browser_download_url"); break
+                                        }
+                                    }
+                                }
+                                val cur = com.java.myapplication.BuildConfig.VERSION_NAME
+                                launch(kotlinx.coroutines.Dispatchers.Main) {
+                                    checking = false
+                                    latestTag = tag.ifEmpty { null }
+                                    if (tag.isNotEmpty() && tag != cur) {
+                                        updateMsg = "发现新版本 v$tag"
+                                        updateUrl = apkUrl
+                                    } else updateMsg = "已是最新版本（v$cur）"
+                                }
+                            } catch (e: Exception) {
+                                launch(kotlinx.coroutines.Dispatchers.Main) {
+                                    checking = false
+                                    updateMsg = "检查失败：${e.message}"
+                                }
+                            }
+                        }
+                    },
+                    color = Color.White.copy(alpha = 0.28f),
+                    shape = RoundedCornerShape(24.dp),
+                    modifier = Modifier.width(150.dp).height(44.dp)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Text(
+                            if (checking) "检查中…" else "检查更新",
+                            style = MaterialTheme.typography.titleSmall,
+                            color = Color.White
+                        )
+                    }
+                }
+                Spacer(Modifier.height(20.dp))
+            }
+        }
+
+        // ---------- 结果与下载 ----------
+        updateMsg?.let {
+            Spacer(Modifier.height(18.dp))
+            Text(it, style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.fillMaxWidth(),
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+        }
+        updateUrl?.let { url ->
+            Spacer(Modifier.height(16.dp))
+            Surface(
+                onClick = {
+                    vm.promptDownload(context, url, null, null, "application/vnd.android.package-archive")
+                },
+                color = MaterialTheme.colorScheme.surfaceVariant,
+                shape = RoundedCornerShape(28.dp),
+                modifier = Modifier.fillMaxWidth().height(56.dp)
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Text("立即下载更新", style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurface)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AboutPage(vm: BrowserViewModel, onOpenUpdate: () -> Unit) {
+    val context = LocalContext.current
     val webviewVer = remember {
         runCatching {
             val pi = context.packageManager.getPackageInfo("com.google.android.webview", 0)
@@ -614,69 +759,16 @@ private fun AboutPage(vm: BrowserViewModel) {
         )
         Spacer(Modifier.height(36.dp))
 
-        // ---------- 白色胶囊更新按钮 ----------
+        // ---------- 软件更新入口（跳转独立更新页） ----------
         Surface(
-            onClick = {
-                if (checking) return@Surface
-                checking = true
-                updateMsg = null; updateUrl = null
-                scope.launch(kotlinx.coroutines.Dispatchers.IO) {
-                    try {
-                        val conn = java.net.URL("https://api.github.com/repos/mingxiozsg-star/zhiwei-browser/releases/latest")
-                            .openConnection() as java.net.HttpURLConnection
-                        conn.connectTimeout = 10000; conn.readTimeout = 10000
-                        conn.setRequestProperty("Accept", "application/vnd.github+json")
-                        val body = conn.inputStream.bufferedReader().readText()
-                        val json = org.json.JSONObject(body)
-                        val tag = json.optString("tag_name").removePrefix("v")
-                        // 直接取 Release 里的 APK 附件地址，应用内下载，不跳外部浏览器
-                        var apkUrl = json.optString("html_url")
-                        val assets = json.optJSONArray("assets")
-                        if (assets != null) {
-                            for (i in 0 until assets.length()) {
-                                val a = assets.getJSONObject(i)
-                                if (a.optString("name").endsWith(".apk")) {
-                                    apkUrl = a.optString("browser_download_url"); break
-                                }
-                            }
-                        }
-                        val cur = com.java.myapplication.BuildConfig.VERSION_NAME
-                        launch(kotlinx.coroutines.Dispatchers.Main) {
-                            checking = false
-                            if (tag.isNotEmpty() && tag != cur) {
-                                updateMsg = "发现新版本 v$tag（当前 v$cur）"
-                                updateUrl = apkUrl
-                            } else updateMsg = "已是最新版本（v$cur）"
-                        }
-                    } catch (e: Exception) {
-                        launch(kotlinx.coroutines.Dispatchers.Main) {
-                            checking = false
-                            updateMsg = "检查失败：${e.message}"
-                        }
-                    }
-                }
-            },
+            onClick = onOpenUpdate,
             color = Color.White,
             shape = RoundedCornerShape(28.dp),
             shadowElevation = 2.dp,
             modifier = Modifier.width(200.dp).height(52.dp)
         ) {
             Box(contentAlignment = Alignment.Center) {
-                Text(
-                    if (checking) "检查中…" else "软件更新",
-                    style = MaterialTheme.typography.titleMedium,
-                    color = Color.Black
-                )
-            }
-        }
-        updateMsg?.let {
-            Spacer(Modifier.height(10.dp))
-            Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
-            updateUrl?.let { url ->
-                TextButton(onClick = {
-                    // 应用内直接下载 APK，不跳转其他浏览器
-                    vm.promptDownload(context, url, null, null, "application/vnd.android.package-archive")
-                }) { Text("去下载", style = MaterialTheme.typography.labelSmall) }
+                Text("软件更新", style = MaterialTheme.typography.titleMedium, color = Color.Black)
             }
         }
 

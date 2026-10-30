@@ -130,6 +130,21 @@ object Settings {
         get() = p.getBoolean("dl_notify", true)
         set(v) { p.edit().putBoolean("dl_notify", v).apply(); bump() }
 
+    /** 下载引擎：0=内置流式下载器（默认，带进度） 1=系统 DownloadManager 2=第三方下载器 */
+    var dlEngine: Int
+        get() = p.getInt("dl_engine", 0)
+        set(v) { p.edit().putInt("dl_engine", v).apply(); bump() }
+
+    /** 第三方下载器包名（空=每次弹出系统选择器） */
+    var dlExternalPackage: String
+        get() = p.getString("dl_external_pkg", "") ?: ""
+        set(v) { p.edit().putString("dl_external_pkg", v).apply(); bump() }
+
+    /** 第三方下载器显示名（仅用于设置页回显） */
+    var dlExternalLabel: String
+        get() = p.getString("dl_external_label", "") ?: ""
+        set(v) { p.edit().putString("dl_external_label", v).apply(); bump() }
+
     // ---------- AI 功能控制 ----------
     /** 全局阻止 AI 增强：开启后所有 AI 入口与弹窗消失 */
     var aiBlocked: Boolean

@@ -216,30 +216,46 @@ class BrowserViewModel : ViewModel() {
         return downloadExts.any { path.endsWith(it) }
     }
 
-    /** 弹出下载确认框，确认后入队系统下载器并记录到下载历史 */
+    /** 弹出下载确认框；确认后按用户设置的下载引擎分派 */
     fun promptDownload(context: Context, url: String, ua: String?, contentDisposition: String?, mime: String?) {
         val name = URLUtil.guessFileName(url, contentDisposition, mime)
+        val engine = Settings.dlEngine
+        val engineHint = when (engine) {
+            1 -> "保存到：下载/知微浏览器/（系统下载器）"
+            2 -> "交给：${Settings.dlExternalLabel.ifBlank { "第三方下载器" }}"
+            else -> "保存到：下载/知微浏览器/（内置下载器，带进度）"
+        }
         AlertDialog.Builder(context)
             .setTitle("下载文件")
-            .setMessage("$name\n\n保存到：下载/知微浏览器/")
+            .setMessage("$name\n\n$engineHint")
             .setPositiveButton("下载") { _, _ ->
                 try {
-                    val req = DownloadManager.Request(Uri.parse(url))
-                    if (mime != null) req.setMimeType(mime)
-                    req.addRequestHeader("User-Agent", ua ?: WebSettings.getDefaultUserAgent(context))
-                    CookieManager.getInstance().getCookie(url)?.let { req.addRequestHeader("Cookie", it) }
-                    req.setTitle(name)
-                    req.setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
-                    req.setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, "知微浏览器/$name")
-                    (context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager).enqueue(req)
-                    Store.addDownload(name, url)
-                    Toast.makeText(context, "开始下载：$name\n保存到：下载/知微浏览器/", Toast.LENGTH_LONG).show()
+                    when (engine) {
+                        1 -> Downloader.enqueueSystem(context, url, name, ua, mime)
+                        2 -> Downloader.enqueueExternal(context, url, mime, Settings.dlExternalPackage)
+                        else -> Downloader.enqueue(
+                            context, url, nameHint = name, ua = ua, mime = mime,
+                            contentDisposition = contentDisposition
+                        )
+                    }
+                    Toast.makeText(context, "开始下载：$name", Toast.LENGTH_SHORT).show()
                 } catch (e: Exception) {
                     Toast.makeText(context, "下载失败：${e.message}", Toast.LENGTH_SHORT).show()
                 }
             }
             .setNegativeButton("取消", null)
             .show()
+    }
+
+    /** 包内直链下载（更新页等场景）：不弹框，直接按引擎入队 */
+    fun startDownloadDirect(context: Context, url: String, nameHint: String?, mime: String?) {
+        runCatching {
+            when (Settings.dlEngine) {
+                1 -> Downloader.enqueueSystem(context, url, nameHint, null, mime)
+                2 -> Downloader.enqueueExternal(context, url, mime, Settings.dlExternalPackage)
+                else -> Downloader.enqueue(context, url, nameHint = nameHint, mime = mime)
+            }
+        }
     }
 
     // ---------------- WebViewClient ----------------

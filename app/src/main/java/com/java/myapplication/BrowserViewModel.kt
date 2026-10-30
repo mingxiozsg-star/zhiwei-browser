@@ -70,7 +70,14 @@ class BrowserViewModel : ViewModel() {
         tabs.add(tab)
         currentIndex = tabs.size - 1
         ensureWebView(context, tab)
-        if (url.isNotBlank() && !url.startsWith("zhiwei://")) tab.webView?.loadUrl(url)
+        if (url.isNotBlank() && !url.startsWith("zhiwei://")) {
+            // 乐观更新：立即进入加载态，避免慢站点连接期间闪回主页
+            tab.url = url
+            tab.title = url
+            tab.isLoading = true
+            tab.progress = 5
+            tab.webView?.loadUrl(url)
+        }
         if (url.startsWith("zhiwei://")) tab.url = url
         return tab
     }
@@ -90,6 +97,12 @@ class BrowserViewModel : ViewModel() {
         val target = Settings.toUrl(input)
         val isSearch = !target.startsWith("http") || target == Settings.searchUrl(input)
         tab.pendingSearch = if (isSearch || !input.contains(".")) input else null
+        // 乐观更新：立即脱离主页态并进入加载画面，不等慢站点 onPageStarted
+        tab.url = target
+        tab.title = target
+        tab.loadError = false
+        tab.isLoading = true
+        tab.progress = 5
         tab.webView?.loadUrl(target)
     }
 

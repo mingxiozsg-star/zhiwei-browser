@@ -97,10 +97,14 @@ fun BrowserScreen(
 
     val isHomeTab = tab?.isHome != false
     val wallpaper = if (isHomeTab) rememberHomeWallpaper() else null
+    val homeVideo = if (isHomeTab) Settings.homeBgVideo else ""
+    val hasBg = wallpaper != null || homeVideo.isNotBlank()
 
-    // 根部：壁纸全屏铺满（含底栏区域）
+    // 根部：背景全屏铺满（含底栏区域）；视频优先，其次图片
     Box(Modifier.fillMaxSize()) {
-        if (wallpaper != null) {
+        if (homeVideo.isNotBlank()) {
+            VideoBackground(homeVideo)
+        } else if (wallpaper != null) {
             androidx.compose.foundation.Image(
                 bitmap = wallpaper,
                 contentDescription = null,
@@ -111,7 +115,7 @@ fun BrowserScreen(
 
     Column(
         Modifier.fillMaxSize()
-            .background(if (wallpaper != null) Color.Transparent else MaterialTheme.colorScheme.background)
+            .background(if (hasBg) Color.Transparent else MaterialTheme.colorScheme.background)
             .navigationBarsPadding()
     ) {
 
@@ -146,6 +150,7 @@ fun BrowserScreen(
             } else if (tab.isHome) {
                 HomePage(
                     wallpaper = wallpaper,
+                    hasVideoBg = homeVideo.isNotBlank(),
                     onSearch = { q -> vm.homeNavigate(tab, q) },
                     onOpenUrl = { url -> vm.homeNavigate(tab, url) }
                 )
@@ -165,10 +170,10 @@ fun BrowserScreen(
         }
 
         // ---------- 底部工具栏 ----------
-        val barTint = if (wallpaper != null) Color.White else MaterialTheme.colorScheme.onSurface
+        val barTint = if (hasBg) Color.White else MaterialTheme.colorScheme.onSurface
         Surface(
-            color = if (wallpaper != null) Color.Transparent else MaterialTheme.colorScheme.surface,
-            tonalElevation = if (wallpaper != null) 0.dp else 3.dp
+            color = if (hasBg) Color.Transparent else MaterialTheme.colorScheme.surface,
+            tonalElevation = if (hasBg) 0.dp else 3.dp
         ) {
             if (tab?.isHome != false) {
                 // 主页：五键导航底栏 ← → ⌂ ☰ ↻（整体上抬，按钮加大）

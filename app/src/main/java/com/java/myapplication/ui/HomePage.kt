@@ -60,6 +60,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.unit.dp
 import com.java.myapplication.Settings
 import com.java.myapplication.Shortcut
@@ -122,6 +123,29 @@ fun rememberHomeWallpaper(): ImageBitmap? {
 }
 
 /**
+ * 视频背景：静音循环播放用户导入的视频，铺满全屏。
+ * 页面离开时自动停止释放，避免后台耗电。
+ */
+@Composable
+fun VideoBackground(uriString: String) {
+    AndroidView(
+        factory = { ctx ->
+            android.widget.VideoView(ctx).apply {
+                setVideoURI(Uri.parse(uriString))
+                setOnPreparedListener { mp ->
+                    mp.isLooping = true
+                    mp.setVolume(0f, 0f)
+                    start()
+                }
+                setOnErrorListener { _, _, _ -> true }
+            }
+        },
+        modifier = Modifier.fillMaxSize(),
+        onRelease = { runCatching { it.stopPlayback() } }
+    )
+}
+
+/**
  * 内置新标签页。
  * 支持自定义壁纸 / 系统壁纸 / 渐变预设；搜索框靠上、输入常驻本地 state；
  * 只有按「搜索」键或点建议项才发起跳转。
@@ -130,6 +154,7 @@ fun rememberHomeWallpaper(): ImageBitmap? {
 @Composable
 fun HomePage(
     wallpaper: ImageBitmap?,
+    hasVideoBg: Boolean = false,
     onSearch: (String) -> Unit,
     onOpenUrl: (String) -> Unit,
 ) {
@@ -139,7 +164,7 @@ fun HomePage(
     var deleteTarget by remember { mutableStateOf<Shortcut?>(null) }
 
     val bg = homeBgPresets.getOrElse(Settings.homeBg) { homeBgPresets[0] }
-    val hasWallpaper = wallpaper != null
+    val hasWallpaper = wallpaper != null || hasVideoBg
     val dark = if (hasWallpaper) true else bg.first().luminance() < 0.4f
     val onBg = if (dark) Color(0xFFF2F2F7) else Color(0xFF1C1B21)
 

@@ -7,6 +7,11 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.animation.togetherWith
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -182,19 +187,36 @@ private fun SettingsRoot(onOpen: (String) -> Unit) {
 
 @Composable
 private fun RoamGroup(label: String, content: @Composable () -> Unit) {
-    Text(label, style = MaterialTheme.typography.titleSmall,
+    Text(
+        label,
+        style = MaterialTheme.typography.titleSmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = Modifier.padding(start = 8.dp, top = 22.dp, bottom = 8.dp))
+        modifier = Modifier.padding(start = 8.dp, top = 24.dp, bottom = 10.dp)
+    )
     Surface(
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
-        shape = RoundedCornerShape(20.dp)
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+        shape = RoundedCornerShape(22.dp),
+        border = androidx.compose.foundation.BorderStroke(
+            1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.35f)
+        )
     ) { Column { content() } }
 }
 
 @Composable
 private fun RoamItem(icon: String, title: String, subtitle: String, onClick: () -> Unit) {
+    val interaction = androidx.compose.runtime.remember {
+        androidx.compose.foundation.interaction.MutableInteractionSource()
+    }
+    val pressed by interaction.collectIsPressedAsState()
+    val scale by androidx.compose.animation.core.animateFloatAsState(
+        targetValue = if (pressed) 0.97f else 1f,
+        animationSpec = androidx.compose.animation.core.tween(120),
+        label = "roamPress"
+    )
     Row(
-        Modifier.fillMaxWidth().clickable(onClick = onClick)
+        Modifier.fillMaxWidth()
+            .graphicsLayer { scaleX = scale; scaleY = scale }
+            .clickable(interactionSource = interaction, indication = null, onClick = onClick)
             .padding(horizontal = 18.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -205,8 +227,12 @@ private fun RoamItem(icon: String, title: String, subtitle: String, onClick: () 
             Text(subtitle, style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
-        Icon(Icons.Filled.KeyboardArrowRight, null,
-            tint = MaterialTheme.colorScheme.onSurfaceVariant)
+        Icon(
+            Icons.Filled.KeyboardArrowRight, null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(
+                alpha = if (pressed) 0.35f else 0.7f
+            )
+        )
     }
 }
 
@@ -347,6 +373,33 @@ private fun AppearancePage(onManageShortcuts: () -> Unit) {
             }
             Settings.homeBgImage = uri.toString()
         }
+    }
+    val videoPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        if (uri != null) {
+            runCatching {
+                context.contentResolver.takePersistableUriPermission(
+                    uri, android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            Settings.homeBgVideo = uri.toString()
+        }
+    }
+    Row(
+        Modifier.fillMaxWidth().clickable { videoPicker.launch("video/*") }
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text("自定义视频背景", style = MaterialTheme.typography.bodyLarge)
+            Text(
+                if (Settings.homeBgVideo.isBlank()) "未设置（导入后循环静音播放）" else "已设置，点按更换",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        if (Settings.homeBgVideo.isNotBlank()) {
+            TextButton(onClick = { Settings.homeBgVideo = "" }) { Text("清除") }
+        }
+        Icon(Icons.Filled.KeyboardArrowRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
     }
     Row(
         Modifier.fillMaxWidth().clickable { wallpaperPicker.launch("image/*") }
@@ -762,13 +815,17 @@ private fun AboutPage(vm: BrowserViewModel, onOpenUpdate: () -> Unit) {
         // ---------- 软件更新入口（跳转独立更新页） ----------
         Surface(
             onClick = onOpenUpdate,
-            color = Color.White,
+            color = MaterialTheme.colorScheme.primary,
             shape = RoundedCornerShape(28.dp),
             shadowElevation = 2.dp,
             modifier = Modifier.width(200.dp).height(52.dp)
         ) {
             Box(contentAlignment = Alignment.Center) {
-                Text("软件更新", style = MaterialTheme.typography.titleMedium, color = Color.Black)
+                Text(
+                    "软件更新",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onPrimary
+                )
             }
         }
 
@@ -809,9 +866,15 @@ private fun AboutPage(vm: BrowserViewModel, onOpenUpdate: () -> Unit) {
             }
         }
 
+        // ---------- 开发与版权信息 ----------
+        AboutSection("开发与版权信息") {
+            AboutRow("开发者", "始源创想科技IT")
+            AboutRow("版权所有", "© 2026 始源创想科技IT")
+        }
+
         Spacer(Modifier.height(48.dp))
         Text(
-            "Zhiwei Team 出品",
+            "始源创想科技IT 出品",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )

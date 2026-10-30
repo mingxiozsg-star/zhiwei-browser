@@ -273,6 +273,11 @@ object Settings {
         get() = p.getString("home_bg_image", "") ?: ""
         set(v) { p.edit().putString("home_bg_image", v).apply(); bump() }
 
+    /** 主页自定义视频背景 URI，空=未设置；设置后优先于图片背景 */
+    var homeBgVideo: String
+        get() = p.getString("home_bg_video", "") ?: ""
+        set(v) { p.edit().putString("home_bg_video", v).apply(); bump() }
+
     /** 主页跟随系统桌面壁纸（全屏，含底栏） */
     var homeUseSystemWallpaper: Boolean
         get() = p.getBoolean("home_sys_wallpaper", false)

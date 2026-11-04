@@ -261,25 +261,7 @@ fun UpdateCenterPage(vm: BrowserViewModel, onBack: (() -> Unit)? = null) {
                     color = Color.White
                 )
             }
-            Spacer(Modifier.height(26.dp))
-            Surface(
-                onClick = { check() },
-                color = Color.White.copy(alpha = 0.24f),
-                shape = RoundedCornerShape(24.dp),
-                modifier = Modifier.width(168.dp).height(46.dp)
-            ) {
-                Box(contentAlignment = Alignment.Center) {
-                    if (checking) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(20.dp),
-                            color = Color.White,
-                            strokeWidth = 2.dp
-                        )
-                    } else {
-                        Text("检查更新", style = MaterialTheme.typography.titleSmall, color = Color.White)
-                    }
-                }
-            }
+            Spacer(Modifier.height(18.dp))
             msg?.let {
                 Spacer(Modifier.height(14.dp))
                 Text(
@@ -306,6 +288,7 @@ fun UpdateCenterPage(vm: BrowserViewModel, onBack: (() -> Unit)? = null) {
                 Spacer(Modifier.height(12.dp))
             }
             val label = when {
+                checking -> "检查中…"
                 task == null -> if (apkUrl != null) "下载新版本${tag?.let { " v$it" } ?: ""}" else "检查更新"
                 task.status == DlStatus.DONE -> "安装更新"
                 task.status == DlStatus.PAUSED -> "继续下载"
@@ -411,8 +394,20 @@ private fun UpdateProgress(task: DlTask) {
 @Composable
 fun AboutUpdateHero(onOpen: () -> Unit) {
     var offset by remember { mutableFloatStateOf(0f) }
+    var entering by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val threshold = with(LocalDensity.current) { 110.dp.toPx() }
+
+    // 下拉转场：内容随手指/点击下移淡出，随后展开全屏更新中心
+    val enter: suspend () -> Unit = {
+        androidx.compose.animation.core.animate(
+            offset, threshold,
+            animationSpec = tween(300, easing = FastOutSlowInEasing)
+        ) { value, _ -> offset = value }
+        onOpen()
+        offset = 0f
+        entering = false
+    }
 
     Column(
         Modifier.fillMaxWidth()
@@ -437,11 +432,13 @@ fun AboutUpdateHero(onOpen: () -> Unit) {
                     }
                     val triggered = owned && acc >= threshold
                     val from = acc
-                    scope.launch {
-                        if (triggered) {
-                            offset = 0f
-                            onOpen()
-                        } else if (owned) {
+                    if (triggered) {
+                        if (!entering) {
+                            entering = true
+                            scope.launch { enter() }
+                        }
+                    } else if (owned) {
+                        scope.launch {
                             androidx.compose.animation.core.animate(
                                 0f, from, animationSpec = tween(240)
                             ) { value, _ -> offset = value }
@@ -452,6 +449,8 @@ fun AboutUpdateHero(onOpen: () -> Unit) {
             .graphicsLayer {
                 translationY = offset * 0.35f
                 alpha = (1f - offset / (threshold * 1.7f)).coerceIn(0.4f, 1f)
+                scaleX = 1f - offset / (threshold * 12f)
+                scaleY = 1f - offset / (threshold * 12f)
             },
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
@@ -468,7 +467,28 @@ fun AboutUpdateHero(onOpen: () -> Unit) {
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(16.dp))
+        Surface(
+            onClick = {
+                if (!entering) {
+                    entering = true
+                    scope.launch { enter() }
+                }
+            },
+            color = MaterialTheme.colorScheme.primary,
+            shape = RoundedCornerShape(26.dp),
+            shadowElevation = 2.dp,
+            modifier = Modifier.width(180.dp).height(48.dp)
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Text(
+                    "检查更新",
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onPrimary
+                )
+            }
+        }
+        Spacer(Modifier.height(10.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
             Icon(
                 Icons.Filled.KeyboardArrowDown,

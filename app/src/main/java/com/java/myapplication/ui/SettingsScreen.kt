@@ -154,10 +154,24 @@ fun SettingsScreen(vm: BrowserViewModel, onBack: () -> Unit) {
         // ---------- 全屏更新中心（关于页下滑 / 软件更新入口触发） ----------
         androidx.compose.animation.AnimatedVisibility(
             visible = showUpdate,
-            enter = androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(220)) +
-                androidx.compose.animation.slideInVertically(androidx.compose.animation.core.tween(320)) { it / 5 },
+            enter = androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(240)) +
+                androidx.compose.animation.scaleIn(
+                    animationSpec = androidx.compose.animation.core.tween(
+                        360, easing = androidx.compose.animation.core.FastOutSlowInEasing
+                    ),
+                    initialScale = 0.9f,
+                    transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0.5f, 0f)
+                ) +
+                androidx.compose.animation.slideInVertically(androidx.compose.animation.core.tween(360)) { -it / 10 },
             exit = androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(180)) +
-                androidx.compose.animation.slideOutVertically(androidx.compose.animation.core.tween(240)) { it / 5 },
+                androidx.compose.animation.scaleOut(
+                    animationSpec = androidx.compose.animation.core.tween(
+                        240, easing = androidx.compose.animation.core.FastOutSlowInEasing
+                    ),
+                    targetScale = 0.94f,
+                    transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0.5f, 0f)
+                ) +
+                androidx.compose.animation.slideOutVertically(androidx.compose.animation.core.tween(240)) { -it / 10 },
             modifier = Modifier.fillMaxSize()
         ) {
             UpdateCenterPage(vm, onBack = { showUpdate = false })

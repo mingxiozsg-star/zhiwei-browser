@@ -241,9 +241,11 @@ object Downloader {
         MimeTypeMap.getSingleton().getMimeTypeFromExtension(name.substringAfterLast('.', "").lowercase())
             ?: "application/octet-stream"
 
-    /** 下载完成后安装 APK（含未知来源授权引导） */
+    /** 下载完成后安装 APK（含未知来源授权引导）
+     *  先复制到应用缓存再用 FileProvider 提供，规避部分设备对 MediaStore 条目安装的限制。 */
     fun installApk(app: Context, task: DlTask) {
-        val uri = task.finalUri?.let { Uri.parse(it) }
+        val uri = runCatching { stageForInstall(app, task) }.getOrNull()
+            ?: task.finalUri?.let { Uri.parse(it) }
             ?: task.finalPath?.let { path ->
                 runCatching {
                     androidx.core.content.FileProvider.getUriForFile(
@@ -259,6 +261,21 @@ object Downloader {
                 }
             )
         }
+    }
+
+    /** 把已下载的 APK 复制到 cacheDir/install 并由 FileProvider 暴露，保证任何落盘方式都能安装 */
+    private fun stageForInstall(app: Context, task: DlTask): Uri? {
+        val dir = File(app.cacheDir, "install").apply { if (!exists()) mkdirs() }
+        val out = File(dir, task.displayName)
+        val ins = when {
+            task.finalUri != null -> app.contentResolver.openInputStream(Uri.parse(task.finalUri))
+            task.finalPath != null -> File(task.finalPath).inputStream()
+            else -> null
+        } ?: return null
+        ins.use { src -> out.outputStream().use { src.copyTo(it, 64 * 1024) } }
+        return androidx.core.content.FileProvider.getUriForFile(
+            app, "${app.packageName}.fileprovider", out
+        )
     }
 
     /** 交给系统 DownloadManager（可选引擎） */

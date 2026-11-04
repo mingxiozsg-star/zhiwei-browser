@@ -12,6 +12,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -48,8 +49,10 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
@@ -188,7 +191,7 @@ private suspend fun fetchLatestRelease(): Pair<String, String?> = withContext(Di
 
 /** 更新中心整页：LOGO 动态背景居中、版本号、底部跳转更新按钮 + 下载进度 */
 @Composable
-fun UpdateCenterPage(vm: BrowserViewModel, onBack: (() -> Unit)? = null) {
+fun UpdateCenterPage(progress: Float, vm: BrowserViewModel, onBack: (() -> Unit)? = null) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val cur = com.java.myapplication.BuildConfig.VERSION_NAME
@@ -227,12 +230,28 @@ fun UpdateCenterPage(vm: BrowserViewModel, onBack: (() -> Unit)? = null) {
 
     if (onBack != null) BackHandler { onBack() }
 
-    Box(Modifier.fillMaxSize()) {
-        AnimatedGradientBackdrop(Modifier.fillMaxSize())
+    val p = progress.coerceIn(0f, 1f)
+    val heroOffset = with(LocalDensity.current) {
+        (LocalConfiguration.current.screenHeightDp * 0.2f).dp.toPx()
+    }
+
+    Box(
+        Modifier.fillMaxSize().pointerInput(Unit) { detectTapGestures { } }
+    ) {
+        // 背景：从信息栏位置向下展开，避免整块硬切
+        Box(
+            Modifier.fillMaxSize().graphicsLayer {
+                alpha = p
+                scaleX = 0.88f + 0.12f * p
+                scaleY = 0.5f + 0.5f * p
+                transformOrigin = TransformOrigin(0.5f, 0f)
+            }
+        ) { AnimatedGradientBackdrop(Modifier.fillMaxSize()) }
         if (onBack != null) {
             IconButton(
                 onClick = onBack,
                 modifier = Modifier.align(Alignment.TopStart).padding(6.dp)
+                    .graphicsLayer { alpha = ((p - 0.45f) / 0.55f).coerceIn(0f, 1f) }
             ) { Icon(Icons.Filled.Close, "关闭", tint = Color.White) }
         }
         Column(
@@ -240,26 +259,37 @@ fun UpdateCenterPage(vm: BrowserViewModel, onBack: (() -> Unit)? = null) {
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Spacer(Modifier.weight(1f))
-            ZhiweiLogo(118.dp, animated = true)
-            Spacer(Modifier.height(22.dp))
-            Text(
-                "zhiwei browser",
-                style = MaterialTheme.typography.displaySmall,
-                color = Color.White
-            )
-            Spacer(Modifier.height(8.dp))
-            Text(
-                "V$cur · ${com.java.myapplication.BuildConfig.BUILD_TIME}",
-                style = MaterialTheme.typography.bodySmall,
-                color = Color.White.copy(alpha = 0.85f)
-            )
-            tag?.let {
-                Spacer(Modifier.height(6.dp))
+            // LOGO 与版本：从信息栏 LOGO 的位置放大着落，形成同一条运动轨迹
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier.graphicsLayer {
+                    alpha = p
+                    val s = 1f + 0.55f * (1f - p)
+                    scaleX = s; scaleY = s
+                    translationY = -(1f - p) * heroOffset
+                }
+            ) {
+                ZhiweiLogo(118.dp, animated = true)
+                Spacer(Modifier.height(22.dp))
                 Text(
-                    "最新版本：v$it",
-                    style = MaterialTheme.typography.bodySmall,
+                    "zhiwei browser",
+                    style = MaterialTheme.typography.displaySmall,
                     color = Color.White
                 )
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    "V$cur · ${com.java.myapplication.BuildConfig.BUILD_TIME}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Color.White.copy(alpha = 0.85f)
+                )
+                tag?.let {
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        "最新版本：v$it",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color.White
+                    )
+                }
             }
             Spacer(Modifier.height(18.dp))
             msg?.let {
@@ -268,12 +298,20 @@ fun UpdateCenterPage(vm: BrowserViewModel, onBack: (() -> Unit)? = null) {
                     it,
                     style = MaterialTheme.typography.bodyMedium,
                     color = Color.White,
-                    textAlign = TextAlign.Center
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.graphicsLayer { alpha = p * p }
                 )
             }
             Spacer(Modifier.weight(1f))
 
-            // ---------- 底部：进度 + 跳转更新按钮 ----------
+            // ---------- 底部：进度 + 跳转更新按钮（随进度上浮） ----------
+            Column(
+                Modifier.fillMaxWidth().graphicsLayer {
+                    alpha = p
+                    translationY = (1f - p) * 90.dp.toPx()
+                },
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
             task?.let {
                 UpdateProgress(task)
                 Spacer(Modifier.height(14.dp))
@@ -332,6 +370,7 @@ fun UpdateCenterPage(vm: BrowserViewModel, onBack: (() -> Unit)? = null) {
                 }
             }
             Spacer(Modifier.height(34.dp))
+            }
         }
     }
 }
@@ -392,65 +431,45 @@ private fun UpdateProgress(task: DlTask) {
  * 只消费向下的手势，向上滑动仍交给外层列表滚动，不抢滚动事件。
  */
 @Composable
-fun AboutUpdateHero(onOpen: () -> Unit) {
-    var offset by remember { mutableFloatStateOf(0f) }
-    var entering by remember { mutableStateOf(false) }
-    val scope = rememberCoroutineScope()
-    val threshold = with(LocalDensity.current) { 110.dp.toPx() }
-
-    // 下拉转场：内容随手指/点击下移淡出，随后展开全屏更新中心
-    val enter: suspend () -> Unit = {
-        androidx.compose.animation.core.animate(
-            offset, threshold,
-            animationSpec = tween(300, easing = FastOutSlowInEasing)
-        ) { value, _ -> offset = value }
-        onOpen()
-        offset = 0f
-        entering = false
-    }
+fun AboutUpdateHero(
+    progress: Float,
+    onPull: (Float) -> Unit,
+    onSettle: () -> Unit,
+    onOpen: () -> Unit
+) {
+    val threshold = with(LocalDensity.current) { 120.dp.toPx() }
+    val p = progress.coerceIn(0f, 1f)
 
     Column(
         Modifier.fillMaxWidth()
             .pointerInput(Unit) {
                 awaitEachGesture {
                     val down = awaitFirstDown(requireUnconsumed = false)
-                    var acc = 0f
                     var owned = false
                     while (true) {
                         val event = awaitPointerEvent()
                         val change = event.changes.firstOrNull { it.id == down.id } ?: break
                         if (!change.pressed) break
                         val dy = change.position.y - change.previousPosition.y
-                        if (dy > 0f || (owned && acc + dy > 0f)) {
+                        if (dy > 0f) {
                             owned = true
-                            acc = (acc + dy).coerceAtLeast(0f)
                             change.consume()
-                            offset = acc
+                            onPull(dy / threshold)
+                        } else if (!owned) {
+                            break   // 向上滑：交给外层列表滚动
                         } else {
-                            break
+                            onPull(dy / threshold)   // 回拉：进度同步回收
                         }
                     }
-                    val triggered = owned && acc >= threshold
-                    val from = acc
-                    if (triggered) {
-                        if (!entering) {
-                            entering = true
-                            scope.launch { enter() }
-                        }
-                    } else if (owned) {
-                        scope.launch {
-                            androidx.compose.animation.core.animate(
-                                0f, from, animationSpec = tween(240)
-                            ) { value, _ -> offset = value }
-                        }
-                    }
+                    if (owned) onSettle()
                 }
             }
             .graphicsLayer {
-                translationY = offset * 0.35f
-                alpha = (1f - offset / (threshold * 1.7f)).coerceIn(0.4f, 1f)
-                scaleX = 1f - offset / (threshold * 12f)
-                scaleY = 1f - offset / (threshold * 12f)
+                translationY = p * 170.dp.toPx()
+                alpha = (1f - p * 1.35f).coerceIn(0f, 1f)
+                val s = 1f - 0.07f * p
+                scaleX = s
+                scaleY = s
             },
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
@@ -469,12 +488,7 @@ fun AboutUpdateHero(onOpen: () -> Unit) {
         )
         Spacer(Modifier.height(16.dp))
         Surface(
-            onClick = {
-                if (!entering) {
-                    entering = true
-                    scope.launch { enter() }
-                }
-            },
+            onClick = onOpen,
             color = MaterialTheme.colorScheme.primary,
             shape = RoundedCornerShape(26.dp),
             shadowElevation = 2.dp,
@@ -498,7 +512,7 @@ fun AboutUpdateHero(onOpen: () -> Unit) {
             )
             Spacer(Modifier.width(4.dp))
             Text(
-                "下滑进入更新中心",
+                "下拉进入更新中心",
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.primary
             )

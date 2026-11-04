@@ -65,10 +65,10 @@ class BrowserViewModel : ViewModel() {
 
     val current: Tab? get() = tabs.getOrNull(currentIndex)
 
-    fun addTab(context: Context, url: String = Settings.homepage): Tab {
+    fun addTab(context: Context, url: String = Settings.homepage, background: Boolean = false): Tab {
         val tab = Tab(++idSeq)
         tabs.add(tab)
-        currentIndex = tabs.size - 1
+        if (!background) currentIndex = tabs.size - 1
         ensureWebView(context, tab)
         if (url.isNotBlank() && !url.startsWith("zhiwei://")) {
             // 乐观更新：立即进入加载态，避免慢站点连接期间闪回主页
@@ -120,15 +120,71 @@ class BrowserViewModel : ViewModel() {
     @SuppressLint("SetJavaScriptEnabled")
     fun ensureWebView(context: Context, tab: Tab): WebView {
         tab.webView?.let { return it }
-        val w = WebView(context)
+        val w = ZwWebView(context)
         applySettings(w)
         w.webViewClient = BrowserClient(tab)
         w.webChromeClient = BrowserChrome(tab)
         w.setDownloadListener(DownloadListener { url, ua, cd, mime, _ ->
             promptDownload(context, url, ua, cd, mime)
         })
+        // 长按链接/图片：给出与主流浏览器一致的快捷菜单
+        w.setOnLongClickListener { view -> longPressMenu(context, view as WebView) }
+        // 下拉刷新（设置内可关）
+        w.pullThresholdPx = 90f * context.resources.displayMetrics.density
+        w.onPullRefresh = {
+            if (Settings.pullRefresh) {
+                android.widget.Toast.makeText(context, "已刷新", android.widget.Toast.LENGTH_SHORT).show()
+                (w as WebView).reload()
+            }
+        }
         tab.webView = w
         return w
+    }
+
+    /** 长按命中链接/图片时的快捷操作菜单 */
+    private fun longPressMenu(context: Context, w: WebView): Boolean {
+        val hit = w.hitTestResult ?: return false
+        val extra = hit.extra ?: return false
+        val isImage = hit.type == WebView.HitTestResult.IMAGE_TYPE
+        val actions: List<Pair<String, () -> Unit>> = when (hit.type) {
+            WebView.HitTestResult.SRC_ANCHOR_TYPE -> listOf(
+                "在新标签中打开" to { addTab(context, extra) },
+                "在后台标签打开" to { addTab(context, extra, background = true) },
+                "复制链接" to { copyText(context, extra, "链接已复制") },
+                "下载链接" to { promptDownload(context, extra, w.settings.userAgentString, null, null) },
+                "分享链接" to { shareText(context, extra) }
+            )
+            WebView.HitTestResult.IMAGE_TYPE,
+            WebView.HitTestResult.SRC_IMAGE_ANCHOR_TYPE -> listOf(
+                "在新标签中打开图片" to { addTab(context, extra) },
+                "保存图片" to { promptDownload(context, extra, w.settings.userAgentString, null, null) },
+                "复制图片地址" to { copyText(context, extra, "图片地址已复制") },
+                "分享图片地址" to { shareText(context, extra) }
+            )
+            else -> return false
+        }
+        runCatching {
+            android.app.AlertDialog.Builder(context)
+                .setTitle(if (isImage) "图片" else "链接")
+                .setItems(actions.map { it.first }.toTypedArray()) { _, which -> actions[which].second() }
+                .show()
+        }
+        return true
+    }
+
+    private fun copyText(context: Context, text: String, toast: String) {
+        val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+        cm.setPrimaryClip(android.content.ClipData.newPlainText("text", text))
+        android.widget.Toast.makeText(context, toast, android.widget.Toast.LENGTH_SHORT).show()
+    }
+
+    private fun shareText(context: Context, text: String) {
+        val i = Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_TEXT, text)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        runCatching { context.startActivity(Intent.createChooser(i, "分享")) }
     }
 
     @SuppressLint("SetJavaScriptEnabled")

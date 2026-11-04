@@ -74,7 +74,22 @@ import com.java.myapplication.Store
 fun SettingsScreen(vm: BrowserViewModel, onBack: () -> Unit) {
     var page by remember { mutableStateOf("root") }
     var showUpdate by remember { mutableStateOf(false) }
+    var updateProgress by remember { androidx.compose.runtime.mutableFloatStateOf(0f) }
     Settings.version.intValue // 订阅变更
+
+    // 下拉进度统一驱动更新中心的转场：拖动、点击、关闭共用同一条动画
+    val updateScope = androidx.compose.runtime.rememberCoroutineScope()
+    fun animateUpdateTo(target: Float, onEnd: (() -> Unit)? = null) {
+        updateScope.launch {
+            androidx.compose.animation.core.animate(
+                updateProgress, target,
+                animationSpec = androidx.compose.animation.core.tween(
+                    360, easing = androidx.compose.animation.core.FastOutSlowInEasing
+                )
+            ) { v, _ -> updateProgress = v }
+            onEnd?.invoke()
+        }
+    }
 
     // 返回键：二级页 → 设置首页 → 浏览器，绝不直接退出
     BackHandler {
@@ -143,7 +158,23 @@ fun SettingsScreen(vm: BrowserViewModel, onBack: () -> Unit) {
                 "opensource" -> OpenSourcePage()
                 "developer" -> DeveloperPage()
                 "shortcuts" -> ShortcutsPage()
-                "about" -> AboutPage(vm, onOpenUpdate = { showUpdate = true })
+                "about" -> AboutPage(
+                    vm = vm,
+                    progress = updateProgress,
+                    onPull = { d -> updateProgress = (updateProgress + d).coerceIn(0f, 1f) },
+                    onSettle = {
+                        if (updateProgress >= 0.42f) {
+                            showUpdate = true
+                            animateUpdateTo(1f)
+                        } else {
+                            animateUpdateTo(0f) { showUpdate = false }
+                        }
+                    },
+                    onOpen = {
+                        showUpdate = true
+                        animateUpdateTo(1f)
+                    }
+                )
             }
             Spacer(Modifier.height(48.dp))
                 }
@@ -151,30 +182,13 @@ fun SettingsScreen(vm: BrowserViewModel, onBack: () -> Unit) {
         }
     }
 
-        // ---------- 全屏更新中心（关于页下滑 / 软件更新入口触发） ----------
-        androidx.compose.animation.AnimatedVisibility(
-            visible = showUpdate,
-            enter = androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(240)) +
-                androidx.compose.animation.scaleIn(
-                    animationSpec = androidx.compose.animation.core.tween(
-                        360, easing = androidx.compose.animation.core.FastOutSlowInEasing
-                    ),
-                    initialScale = 0.9f,
-                    transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0.5f, 0f)
-                ) +
-                androidx.compose.animation.slideInVertically(androidx.compose.animation.core.tween(360)) { -it / 10 },
-            exit = androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(180)) +
-                androidx.compose.animation.scaleOut(
-                    animationSpec = androidx.compose.animation.core.tween(
-                        240, easing = androidx.compose.animation.core.FastOutSlowInEasing
-                    ),
-                    targetScale = 0.94f,
-                    transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0.5f, 0f)
-                ) +
-                androidx.compose.animation.slideOutVertically(androidx.compose.animation.core.tween(240)) { -it / 10 },
-            modifier = Modifier.fillMaxSize()
-        ) {
-            UpdateCenterPage(vm, onBack = { showUpdate = false })
+        // ---------- 全屏更新中心（与关于页下拉进度共用一条动画） ----------
+        if (updateProgress > 0.001f || showUpdate) {
+            UpdateCenterPage(
+                progress = updateProgress,
+                vm = vm,
+                onBack = { animateUpdateTo(0f) { showUpdate = false } }
+            )
         }
     }
 }
@@ -724,7 +738,13 @@ private fun AiControlPage() {
 }
 
 @Composable
-private fun AboutPage(vm: BrowserViewModel, onOpenUpdate: () -> Unit) {
+private fun AboutPage(
+    vm: BrowserViewModel,
+    progress: Float,
+    onPull: (Float) -> Unit,
+    onSettle: () -> Unit,
+    onOpen: () -> Unit
+) {
     val context = LocalContext.current
     val webviewVer = remember {
         runCatching {
@@ -739,9 +759,14 @@ private fun AboutPage(vm: BrowserViewModel, onOpenUpdate: () -> Unit) {
     val locale = remember { java.util.Locale.getDefault().toString().replace("_", ",") }
 
     Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
-        // ---------- 头部：品牌 LOGO 动态牌（下滑进入更新中心） ----------
+        // ---------- 头部：品牌 LOGO 动态牌（下拉进度直达更新中心） ----------
         Spacer(Modifier.height(36.dp))
-        AboutUpdateHero(onOpen = onOpenUpdate)
+        AboutUpdateHero(
+            progress = progress,
+            onPull = onPull,
+            onSettle = onSettle,
+            onOpen = onOpen
+        )
         Spacer(Modifier.height(40.dp))
 
         // ---------- 软件与版本信息 ----------

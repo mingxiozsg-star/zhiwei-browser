@@ -64,6 +64,7 @@ import com.java.myapplication.BrowserViewModel
 import com.java.myapplication.DlStatus
 import com.java.myapplication.DlTask
 import com.java.myapplication.Downloader
+import com.java.myapplication.UpdateChecker
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -167,27 +168,9 @@ fun AnimatedGradientBackdrop(modifier: Modifier = Modifier) {
     )
 }
 
-/** 拉取 GitHub Releases 最新版本：返回 (版本号, APK 直链) */
-private suspend fun fetchLatestRelease(): Pair<String, String?> = withContext(Dispatchers.IO) {
-    val conn = java.net.URL("https://api.github.com/repos/mingxiozsg-star/zhiwei-browser/releases/latest")
-        .openConnection() as java.net.HttpURLConnection
-    conn.connectTimeout = 10_000
-    conn.readTimeout = 10_000
-    conn.setRequestProperty("Accept", "application/vnd.github+json")
-    val body = conn.inputStream.bufferedReader().readText()
-    val json = org.json.JSONObject(body)
-    val tag = json.optString("tag_name").removePrefix("v")
-    var apkUrl: String? = json.optString("html_url").ifBlank { null }
-    json.optJSONArray("assets")?.let { assets ->
-        for (i in 0 until assets.length()) {
-            val a = assets.getJSONObject(i)
-            if (a.optString("name").endsWith(".apk")) {
-                apkUrl = a.optString("browser_download_url"); break
-            }
-        }
-    }
-    tag to apkUrl
-}
+/** 检查更新：走多通道（直连 + 多个加速代理），任一通道可用即返回 */
+private suspend fun fetchLatestRelease(): com.java.myapplication.ReleaseInfo =
+    com.java.myapplication.UpdateChecker.latest()
 
 /** 更新中心整页：LOGO 动态背景居中、版本号、底部跳转更新按钮 + 下载进度 */
 @Composable
@@ -199,6 +182,8 @@ fun UpdateCenterPage(progress: Float, vm: BrowserViewModel, onBack: (() -> Unit)
     var checking by remember { mutableStateOf(false) }
     var msg by remember { mutableStateOf<String?>(null) }
     var apkUrl by remember { mutableStateOf<String?>(null) }
+    var mirrors by remember { mutableStateOf<List<String>>(emptyList()) }
+    var channel by remember { mutableStateOf<String?>(null) }
     var tag by remember { mutableStateOf<String?>(null) }
     var taskId by remember { mutableStateOf<Long?>(null) }
     var dispatched by remember { mutableStateOf(false) }
@@ -211,12 +196,14 @@ fun UpdateCenterPage(progress: Float, vm: BrowserViewModel, onBack: (() -> Unit)
         checking = true; msg = null; apkUrl = null; tag = null; dispatched = false; taskId = null
         scope.launch {
             runCatching { fetchLatestRelease() }
-                .onSuccess { (t, url) ->
+                .onSuccess { info ->
                     checking = false
-                    tag = t.ifBlank { null }
-                    if (t.isNotBlank() && t != cur) {
-                        msg = "发现新版本 v$t"
-                        apkUrl = url
+                    tag = info.tag.ifBlank { null }
+                    mirrors = info.apkMirrors
+                    channel = info.source
+                    if (info.tag.isNotBlank() && info.tag != cur) {
+                        msg = "发现新版本 v${info.tag}"
+                        apkUrl = info.apkUrl
                     } else {
                         msg = "已是最新版本（v$cur）"
                     }
@@ -285,7 +272,7 @@ fun UpdateCenterPage(progress: Float, vm: BrowserViewModel, onBack: (() -> Unit)
                 tag?.let {
                     Spacer(Modifier.height(6.dp))
                     Text(
-                        "最新版本：v$it",
+                        "最新版本：v$it" + (channel?.let { c -> "（通道 $c）" } ?: ""),
                         style = MaterialTheme.typography.bodySmall,
                         color = Color.White
                     )
@@ -344,9 +331,10 @@ fun UpdateCenterPage(progress: Float, vm: BrowserViewModel, onBack: (() -> Unit)
                             } else {
                                 val name = "zhiwei-browser-v${tag ?: cur}.apk"
                                 vm.startDownloadDirect(
-                                    context, url, name, "application/vnd.android.package-archive"
+                                    context, url, name, "application/vnd.android.package-archive",
+                                    mirrors.ifEmpty { UpdateChecker.mirrorUrls(url) }
                                 )
-                                val t = Downloader.tasks.firstOrNull { it.url == url }
+                                val t = Downloader.tasks.firstOrNull { task -> task.url == url }
                                 if (t != null) taskId = t.id else dispatched = true
                             }
                         }

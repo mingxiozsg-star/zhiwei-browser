@@ -304,12 +304,18 @@ class BrowserViewModel : ViewModel() {
     }
 
     /** 包内直链下载（更新页等场景）：不弹框，直接按引擎入队 */
-    fun startDownloadDirect(context: Context, url: String, nameHint: String?, mime: String?) {
+    fun startDownloadDirect(
+        context: Context,
+        url: String,
+        nameHint: String?,
+        mime: String?,
+        mirrors: List<String> = emptyList()
+    ) {
         runCatching {
             when (Settings.dlEngine) {
                 1 -> Downloader.enqueueSystem(context, url, nameHint, null, mime)
                 2 -> Downloader.enqueueExternal(context, url, mime, Settings.dlExternalPackage)
-                else -> Downloader.enqueue(context, url, nameHint = nameHint, mime = mime)
+                else -> Downloader.enqueue(context, url, nameHint = nameHint, mime = mime, mirrors = mirrors)
             }
         }
     }

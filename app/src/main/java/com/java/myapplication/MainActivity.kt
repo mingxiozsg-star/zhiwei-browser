@@ -20,6 +20,7 @@ import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Scaffold
@@ -33,6 +34,8 @@ import com.java.myapplication.ui.AiSheet
 import com.java.myapplication.ui.BookmarksScreen
 import com.java.myapplication.ui.BrowserScreen
 import com.java.myapplication.ui.DownloadsScreen
+import com.java.myapplication.ui.FileTarget
+import com.java.myapplication.ui.FileViewerScreen
 import com.java.myapplication.ui.HistoryScreen
 import com.java.myapplication.ui.OnboardingScreen
 import com.java.myapplication.ui.SettingsScreen
@@ -45,6 +48,9 @@ class MainActivity : ComponentActivity() {
     private var screen by mutableStateOf("splash") // splash/onboarding/browser/settings/bookmarks/history
     private var navDir by androidx.compose.runtime.mutableIntStateOf(1) // 1=前进 -1=返回
     private var aiOpen by mutableStateOf(false)
+
+    /** 内置查看器目标：非 null 时以覆盖层呈现，不打断浏览器状态 */
+    private var viewerTarget by mutableStateOf<FileTarget?>(null)
 
     private val fileChooserLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -112,6 +118,7 @@ class MainActivity : ComponentActivity() {
                 else -> isSystemInDarkTheme()
             }
             MyApplicationTheme(darkTheme = dark) {
+                Box(Modifier.fillMaxSize()) {
                 AnimatedContent(
                     targetState = screen,
                     transitionSpec = {
@@ -143,7 +150,10 @@ class MainActivity : ComponentActivity() {
                         onBack = { navDir = -1; screen = "browser" },
                         onOpen = { url -> vm.current?.webView?.loadUrl(url) ?: vm.addTab(this@MainActivity, url); navDir = -1; screen = "browser" }
                     )
-                    "downloads" -> DownloadsScreen { navDir = -1; screen = "browser" }
+                    "downloads" -> DownloadsScreen(
+                        onBack = { navDir = -1; screen = "browser" },
+                        onOpenFile = { viewerTarget = it }
+                    )
                     else -> {
                         Scaffold(Modifier.fillMaxSize()) { padding ->
                             BrowserScreen(
@@ -184,6 +194,11 @@ class MainActivity : ComponentActivity() {
                             }
                         }
                     }
+                }
+                }
+                // 内置查看器：覆盖层呈现，返回后浏览器状态原样保留
+                viewerTarget?.let { t ->
+                    FileViewerScreen(t) { viewerTarget = null }
                 }
                 }
             }

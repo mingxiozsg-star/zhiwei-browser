@@ -11,6 +11,7 @@ import android.provider.MediaStore
 import android.webkit.CookieManager
 import android.webkit.MimeTypeMap
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
@@ -28,8 +29,19 @@ import java.net.URLDecoder
 
 enum class DlStatus { PENDING, RUNNING, PAUSED, DONE, FAILED, CANCELED }
 
-/** 单个下载任务（进度为 Compose 状态，UI 直接订阅） */
-class DlTask(val id: Long, val url: String, var name: String, val mime: String?) {
+/**
+ * 单个下载任务（进度为 Compose 状态，UI 直接订阅）
+ *
+ * [url] 为原始地址，[mirrors] 为备用线路（加速代理）。下载时按「原始 → 各备用」顺序尝试，
+ * 任何一条线路拿到 200/206 就立即采用，全部失败才判 FAILED。
+ */
+class DlTask(
+    val id: Long,
+    val url: String,
+    var name: String,
+    val mime: String?,
+    val mirrors: List<String> = emptyList()
+) {
     var total by mutableLongStateOf(-1L)
     var done by mutableLongStateOf(0L)
     var status by mutableStateOf(DlStatus.PENDING)
@@ -38,10 +50,17 @@ class DlTask(val id: Long, val url: String, var name: String, val mime: String?)
     var resumable by mutableStateOf(false)
     var finalUri: String? = null             // MediaStore uri（API 29+）
     var finalPath: String? = null            // 公共目录文件路径
+    /** 实际命中的地址（含代理），供「复制下载链接」使用 */
+    var resolvedUrl: String? = null
+    /** 当前使用第几条线路（1 起，用于状态展示） */
+    var lineIndex by mutableIntStateOf(0)
+    val lineCount: Int get() = candidateUrls.size
+    val candidateUrls: List<String> get() = (listOf(url) + mirrors).distinct()
     val progress: Float get() = if (total > 0) (done.toFloat() / total).coerceIn(0f, 1f) else 0f
     val running: Boolean get() = status == DlStatus.RUNNING || status == DlStatus.PENDING
     val finished: Boolean get() = status == DlStatus.DONE
     val displayName: String get() = name.ifBlank { url.substringAfterLast('/').ifBlank { "download" } }
+    val isApk: Boolean get() = displayName.endsWith(".apk", true)
 }
 
 /**
@@ -79,7 +98,10 @@ object Downloader {
     private fun sanitize(name: String): String =
         name.replace(Regex("[\\\\/:*?\"<>|\\x00-\\x1F]"), "_").take(120).ifBlank { "download" }
 
-    /** 入队并开始下载；同名文件自动加 (1) (2) 后缀，不覆盖已有文件 */
+    /**
+     * 入队并开始下载；同名文件自动加 (1) (2) 后缀，不覆盖已有文件。
+     * [mirrors] 为备用线路（加速代理），主链失败时自动切换。
+     */
     fun enqueue(
         context: Context,
         url: String,
@@ -87,13 +109,14 @@ object Downloader {
         ua: String? = null,
         mime: String? = null,
         contentDisposition: String? = null,
-        referer: String? = null
+        referer: String? = null,
+        mirrors: List<String> = emptyList()
     ): DlTask {
         val app = context.applicationContext
         val base = sanitize(nameHint ?: guessName(url, contentDisposition))
-        val task = DlTask(++seq, url, base, mime)
+        val task = DlTask(++seq, url, base, mime, mirrors.filter { it.isNotBlank() && it != url })
         tasks.add(0, task)
-        Store.addDownload(task.name, url)
+        Store.addDownload(task.name, url, task.mime)
         start(app, task, ua, referer)
         return task
     }
@@ -150,58 +173,131 @@ object Downloader {
         return File(dir, "$name.part")
     }
 
+    /**
+     * 多线路下载：按「原始地址 → 各备用（加速代理）」顺序尝试，任一线路成功即结束。
+     * 换线路时强制从 0 开始（不同源的字节内容未必一致，续传会毁文件）。
+     */
     private suspend fun runDownload(app: Context, task: DlTask, ua: String?, referer: String?) = withContext(Dispatchers.IO) {
-        val tmp = tempFile(app.cacheDir, task.displayName)
-        val existing = if (tmp.exists()) tmp.length() else 0L
-        val conn = (URL(task.url).openConnection() as HttpURLConnection).apply {
-            instanceFollowRedirects = true
-            connectTimeout = 15_000
-            readTimeout = 30_000
-            (ua ?: android.webkit.WebSettings.getDefaultUserAgent(app)).takeIf { it.isNotBlank() }?.let { setRequestProperty("User-Agent", it) }
-            referer?.let { setRequestProperty("Referer", it) }
-            CookieManager.getInstance().getCookie(task.url)?.let { setRequestProperty("Cookie", it) }
-            if (task.finalUri == null && existing > 0) setRequestProperty("Range", "bytes=$existing-")
-        }
-        conn.connect()
-        val code = conn.responseCode
-        if (code >= 400) throw IllegalStateException("HTTP $code")
-        val append = code == 206 && existing > 0
-        if (!append && tmp.exists()) tmp.delete()
-        val startAt = if (append) existing else 0L
-        val len = conn.contentLengthLong
-        task.total = if (len > 0) startAt + len else -1L
-        task.done = startAt
-        task.resumable = code == 206
-        task.status = DlStatus.RUNNING
-
-        conn.inputStream.use { ins ->
-            java.io.FileOutputStream(tmp, append).use { out ->
-                val buf = ByteArray(64 * 1024)
-                var lastTick = System.currentTimeMillis()
-                var lastBytes = startAt
-                while (true) {
-                    if (!coroutineContext.isActiveSafe()) break
-                    val n = ins.read(buf)
-                    if (n <= 0) break
-                    out.write(buf, 0, n)
-                    task.done += n
-                    val now = System.currentTimeMillis()
-                    if (now - lastTick >= 200) {
-                        task.speed = (task.done - lastBytes) * 1000 / (now - lastTick)
-                        lastTick = now; lastBytes = task.done
-                    }
+        val candidates = task.candidateUrls
+        var lastError: Exception? = null
+        for ((index, candidate) in candidates.withIndex()) {
+            if (task.status == DlStatus.CANCELED) throw kotlinx.coroutines.CancellationException("canceled")
+            task.lineIndex = index + 1
+            val resumeFrom = if (index == 0) {
+                tempFile(app.cacheDir, task.displayName).takeIf { it.exists() }?.length() ?: 0L
+            } else 0L
+            try {
+                downloadFrom(app, task, candidate, ua, referer, resumeFrom)
+                return@withContext
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                lastError = e
+                task.speed = 0
+                if (index + 1 < candidates.size) {
+                    task.message = "线路 ${index + 1}/${candidates.size} 失败（${e.message ?: "网络错误"}），切换备用…"
                 }
-                out.flush()
             }
         }
-        task.speed = 0
-        if (task.status == DlStatus.CANCELED) throw kotlinx.coroutines.CancellationException("canceled")
+        throw lastError ?: IllegalStateException("下载失败")
+    }
+
+    /**
+     * 从单条线路取流并落盘。
+     *
+     * 自己处理 3xx 而不用 HttpURLConnection 的自动跳转：自动跳转在跨域时不会重新取 Cookie，
+     * OAuth / 带签名参数的下载链（直链 → 302 CDN）会因此拿到 403；手动跟随可按当前域名重注 Cookie。
+     */
+    private suspend fun downloadFrom(
+        app: Context, task: DlTask, rawUrl: String, ua: String?, referer: String?, resumeFrom: Long
+    ) {
+        val tmp = tempFile(app.cacheDir, task.displayName)
+        val existing = resumeFrom
+        val opened = openFollowingRedirects(app, rawUrl, ua, referer, existing)
+        val conn = opened.first
+        try {
+            val code = conn.responseCode
+            if (code >= 400) throw IllegalStateException("HTTP $code")
+            val append = code == 206 && existing > 0
+            if (!append && tmp.exists()) tmp.delete()
+            val startAt = if (append) existing else 0L
+            val len = conn.contentLengthLong
+            task.total = if (len > 0) startAt + len else -1L
+            task.done = startAt
+            task.resumable = code == 206
+            task.resolvedUrl = opened.second
+            task.status = DlStatus.RUNNING
+            task.message = null
+
+            conn.inputStream.use { ins ->
+                java.io.FileOutputStream(tmp, append).use { out ->
+                    val buf = ByteArray(64 * 1024)
+                    var lastTick = System.currentTimeMillis()
+                    var lastBytes = startAt
+                    while (true) {
+                        if (!coroutineContext.isActiveSafe()) break
+                        val n = ins.read(buf)
+                        if (n <= 0) break
+                        out.write(buf, 0, n)
+                        task.done += n
+                        val now = System.currentTimeMillis()
+                        if (now - lastTick >= 200) {
+                            task.speed = (task.done - lastBytes) * 1000 / (now - lastTick)
+                            lastTick = now; lastBytes = task.done
+                        }
+                    }
+                    out.flush()
+                }
+            }
+            task.speed = 0
+            if (task.status == DlStatus.CANCELED) throw kotlinx.coroutines.CancellationException("canceled")
+        } finally {
+            runCatching { conn.disconnect() }
+        }
 
         // 落盘：一次性拷入最终位置
         publish(app, task, tmp)
-        tmp.delete()
+        runCatching { tmp.delete() }
         task.status = DlStatus.DONE
     }
+
+    /** 手动跟随重定向；每一跳按当前域重新注入 Cookie，兼容 OAuth / 签名跳转链 */
+    private fun openFollowingRedirects(
+        app: Context, rawUrl: String, ua: String?, referer: String?, rangeStart: Long
+    ): Pair<HttpURLConnection, String> {
+        var current = rawUrl
+        var hops = 0
+        while (true) {
+            val conn = (URL(current).openConnection() as HttpURLConnection).apply {
+                instanceFollowRedirects = false
+                connectTimeout = 20_000
+                readTimeout = 30_000
+                setRequestProperty("Accept", "*/*")
+                setRequestProperty("Accept-Encoding", "identity")
+                val agent = ua?.takeIf { it.isNotBlank() }
+                    ?: android.webkit.WebSettings.getDefaultUserAgent(app)
+                setRequestProperty("User-Agent", agent)
+                referer?.let { setRequestProperty("Referer", it) }
+                cookieOf(current)?.let { setRequestProperty("Cookie", it) }
+                if (rangeStart > 0) setRequestProperty("Range", "bytes=$rangeStart-")
+            }
+            conn.connect()
+            val code = conn.responseCode
+            if (code in 300..399) {
+                val loc = conn.getHeaderField("Location")
+                runCatching { conn.disconnect() }
+                if (loc.isNullOrBlank()) throw IllegalStateException("HTTP $code 跳转缺少目标")
+                if (++hops > 8) throw IllegalStateException("重定向次数过多")
+                current = runCatching { URL(URL(current), loc).toString() }
+                    .getOrElse { throw IllegalStateException("非法跳转地址") }
+                continue
+            }
+            return conn to current
+        }
+    }
+
+    private fun cookieOf(url: String): String? =
+        runCatching { CookieManager.getInstance().getCookie(url) }.getOrNull()
 
     /** 把临时文件送到最终位置：API 29+ 走 MediaStore（公共下载目录），低版本直接写公共目录 */
     private fun publish(app: Context, task: DlTask, tmp: File) {
@@ -230,6 +326,8 @@ object Downloader {
             tmp.inputStream().use { ins -> target.outputStream().use { ins.copyTo(it, 64 * 1024) } }
             task.finalPath = target.absolutePath
         }
+        // 回填落点，供下载记录「打开 / 查看 / 删除」使用
+        Store.setDownloadLocation(task.url, task.finalUri, task.finalPath, task.mime ?: guessMime(task.displayName))
     }
 
     private fun uniqueName(name: String, i: Int): String {
@@ -240,6 +338,80 @@ object Downloader {
     private fun guessMime(name: String): String =
         MimeTypeMap.getSingleton().getMimeTypeFromExtension(name.substringAfterLast('.', "").lowercase())
             ?: "application/octet-stream"
+
+    // ---------- 下载记录操作：打开 / 删除 ----------
+
+    /** 解析可用的 content:// uri：MediaStore 优先，其次用 FileProvider 包装公共目录文件 */
+    fun uriOf(app: Context, uriString: String?, path: String?): Uri? {
+        uriString?.takeIf { it.isNotBlank() }?.let { return Uri.parse(it) }
+        path?.takeIf { it.isNotBlank() }?.let { p ->
+            return runCatching {
+                androidx.core.content.FileProvider.getUriForFile(
+                    app, "${app.packageName}.fileprovider", File(p)
+                )
+            }.getOrNull()
+        }
+        return null
+    }
+
+    fun uriOf(app: Context, task: DlTask): Uri? = uriOf(app, task.finalUri, task.finalPath)
+
+    /** 删除已落盘的文件（MediaStore 条目或公共目录文件） */
+    fun deleteFile(app: Context, uriString: String?, path: String?): Boolean {
+        var ok = false
+        uriString?.takeIf { it.isNotBlank() }?.let { u ->
+            ok = runCatching { app.contentResolver.delete(Uri.parse(u), null, null) > 0 }.getOrDefault(false)
+        }
+        if (!ok) path?.takeIf { it.isNotBlank() }?.let { p ->
+            ok = runCatching { File(p).delete() }.getOrDefault(false)
+        }
+        return ok
+    }
+
+    fun deleteFile(app: Context, task: DlTask): Boolean {
+        if (task.finalUri == null && task.finalPath == null) return false
+        val ok = deleteFile(app, task.finalUri, task.finalPath)
+        if (ok) { task.finalUri = null; task.finalPath = null }
+        return ok
+    }
+
+    /** 用系统应用打开已下载文件；APK 自动走系统安装器 */
+    fun openExternal(app: Context, uriString: String?, path: String?, name: String, mime: String?): Boolean {
+        val uri = uriOf(app, uriString, path) ?: return false
+        val type = if (name.endsWith(".apk", true)) "application/vnd.android.package-archive"
+        else (mime?.takeIf { it.isNotBlank() } ?: guessMime(name))
+        return runCatching {
+            app.startActivity(
+                Intent(Intent.ACTION_VIEW).apply {
+                    setDataAndType(uri, type)
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+            )
+            true
+        }.getOrDefault(false)
+    }
+
+    /** 直接用 content:// uri 拉起系统安装器：先中转进私有缓存再经 FileProvider 授权，兼容国产 ROM */
+    fun installApkByUri(app: Context, uriString: String, name: String): Boolean {
+        val staged = runCatching {
+            val dir = File(app.cacheDir, "install").apply { if (!exists()) mkdirs() }
+            val out = File(dir, name.ifBlank { "update.apk" })
+            app.contentResolver.openInputStream(Uri.parse(uriString))?.use { ins ->
+                out.outputStream().use { ins.copyTo(it, 64 * 1024) }
+            }
+            androidx.core.content.FileProvider.getUriForFile(app, "${app.packageName}.fileprovider", out)
+        }.getOrNull()
+        val uri = staged ?: Uri.parse(uriString)
+        return runCatching {
+            app.startActivity(
+                Intent(Intent.ACTION_VIEW).apply {
+                    setDataAndType(uri, "application/vnd.android.package-archive")
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+            )
+            true
+        }.getOrDefault(false)
+    }
 
     /** 下载完成后安装 APK（含未知来源授权引导）
      *  先复制到应用缓存再用 FileProvider 提供，规避部分设备对 MediaStore 条目安装的限制。 */

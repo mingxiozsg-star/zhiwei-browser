@@ -8,7 +8,15 @@ import org.json.JSONObject
 data class Bookmark(val title: String, val url: String, val time: Long = System.currentTimeMillis())
 data class HistoryItem(val title: String, val url: String, val time: Long = System.currentTimeMillis())
 data class Shortcut(val name: String, val url: String)
-data class DownloadItem(val name: String, val url: String, val time: Long = System.currentTimeMillis())
+data class DownloadItem(
+    val name: String,
+    val url: String,
+    val time: Long = System.currentTimeMillis(),
+    /** 落点：MediaStore content:// 或公共目录绝对路径，供二次打开/查看 */
+    val uri: String? = null,
+    val path: String? = null,
+    val mime: String? = null
+)
 
 /** 书签 & 历史 & 主页快捷方式持久化存储（JSON in SharedPreferences） */
 object Store {
@@ -64,7 +72,14 @@ object Store {
         val da = JSONArray(prefs().getString("downloads", "[]") ?: "[]")
         for (i in 0 until da.length()) {
             val o = da.getJSONObject(i)
-            downloads.add(DownloadItem(o.optString("name"), o.optString("url"), o.optLong("time")))
+            downloads.add(
+                DownloadItem(
+                    o.optString("name"), o.optString("url"), o.optLong("time"),
+                    o.optString("uri").takeIf { it.isNotBlank() && it != "null" },
+                    o.optString("path").takeIf { it.isNotBlank() && it != "null" },
+                    o.optString("mime").takeIf { it.isNotBlank() && it != "null" }
+                )
+            )
         }
     }
 
@@ -120,8 +135,8 @@ object Store {
     fun clearHistory() { history.clear(); prefs().edit().putString("history", "[]").apply() }
 
     // ---------- 下载记录 ----------
-    fun addDownload(name: String, url: String) {
-        downloads.add(0, DownloadItem(name, url))
+    fun addDownload(name: String, url: String, mime: String? = null) {
+        downloads.add(0, DownloadItem(name, url, System.currentTimeMillis(), null, null, mime))
         if (downloads.size > 200) repeat(downloads.size - 200) { downloads.removeAt(downloads.size - 1) }
         saveDownloads()
     }
@@ -132,9 +147,22 @@ object Store {
     private fun saveDownloads() {
         val arr = JSONArray()
         downloads.take(200).forEach {
-            arr.put(JSONObject().put("name", it.name).put("url", it.url).put("time", it.time))
+            arr.put(
+                JSONObject()
+                    .put("name", it.name).put("url", it.url).put("time", it.time)
+                    .put("uri", it.uri ?: "").put("path", it.path ?: "").put("mime", it.mime ?: "")
+            )
         }
         prefs().edit().putString("downloads", arr.toString()).apply()
+    }
+
+    /** 下载完成后回填真实落点，供「打开/查看/重新下载」使用 */
+    fun setDownloadLocation(url: String, uri: String?, path: String?, mime: String?) {
+        val idx = downloads.indexOfFirst { it.url == url }
+        if (idx < 0) return
+        val d = downloads[idx]
+        downloads[idx] = d.copy(uri = uri ?: d.uri, path = path ?: d.path, mime = mime ?: d.mime)
+        saveDownloads()
     }
 
     // ---------- 会话标签恢复 ----------

@@ -252,7 +252,7 @@ private fun InfoPane(context: Context, target: FileTarget, tip: String, action: 
                     if (install) Downloader.installApkByUri(context, target.uri, target.name)
                     else Downloader.openExternal(context, target.uri, null, target.name, target.mime)
                 }) {
-                    Icon(Icons.Filled.OpenInNew, null, modifier = Modifier.size(18.dp))
+                    Icon(Icons.AutoMirrored.Filled.ExitToApp, null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(6.dp))
                     Text(action)
                 }

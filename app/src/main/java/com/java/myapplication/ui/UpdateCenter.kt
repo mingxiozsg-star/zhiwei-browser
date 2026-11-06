@@ -181,6 +181,7 @@ fun UpdateCenterPage(progress: Float, vm: BrowserViewModel, onBack: (() -> Unit)
 
     var checking by remember { mutableStateOf(false) }
     var msg by remember { mutableStateOf<String?>(null) }
+    var notes by remember { mutableStateOf<String?>(null) }
     var apkUrl by remember { mutableStateOf<String?>(null) }
     var mirrors by remember { mutableStateOf<List<String>>(emptyList()) }
     var channel by remember { mutableStateOf<String?>(null) }
@@ -193,7 +194,7 @@ fun UpdateCenterPage(progress: Float, vm: BrowserViewModel, onBack: (() -> Unit)
 
     fun check() {
         if (checking) return
-        checking = true; msg = null; apkUrl = null; tag = null; dispatched = false; taskId = null
+        checking = true; msg = null; notes = null; apkUrl = null; tag = null; dispatched = false; taskId = null
         scope.launch {
             runCatching { fetchLatestRelease() }
                 .onSuccess { info ->
@@ -201,10 +202,15 @@ fun UpdateCenterPage(progress: Float, vm: BrowserViewModel, onBack: (() -> Unit)
                     tag = info.tag.ifBlank { null }
                     mirrors = info.apkMirrors
                     channel = info.source
-                    if (info.tag.isNotBlank() && info.tag != cur) {
-                        msg = "发现新版本 v${info.tag}"
+                    notes = prettyNotes(info.note)
+                    val latest = info.tag
+                    if (latest.isNotBlank() && UpdateChecker.isNewer(latest, cur)) {
                         apkUrl = info.apkUrl
+                        msg = if (info.apkUrl.isNullOrBlank()) "发现新版本 v$latest，但该版本没有安装包"
+                        else "发现新版本 v$latest"
                     } else {
+                        // 本地比线上还新（自己编译的版本）时不要提示「新版本」
+                        apkUrl = null
                         msg = "已是最新版本（v$cur）"
                     }
                 }
@@ -289,9 +295,19 @@ fun UpdateCenterPage(progress: Float, vm: BrowserViewModel, onBack: (() -> Unit)
                     modifier = Modifier.graphicsLayer { alpha = p * p }
                 )
             }
+            notes?.let {
+                Spacer(Modifier.height(10.dp))
+                Text(
+                    it,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Color.White.copy(alpha = 0.86f),
+                    textAlign = TextAlign.Center,
+                    maxLines = 8,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                    modifier = Modifier.graphicsLayer { alpha = p * p }
+                )
+            }
             Spacer(Modifier.weight(1f))
-
-            // ---------- 底部：进度 + 跳转更新按钮（随进度上浮） ----------
             Column(
                 Modifier.fillMaxWidth().graphicsLayer {
                     alpha = p
@@ -506,4 +522,16 @@ fun AboutUpdateHero(
             )
         }
     }
+}
+
+/** Release 说明转成可直接显示的一小段文字：去掉 markdown 记号并限长 */
+private fun prettyNotes(md: String?): String? {
+    val raw = md?.takeIf { it.isNotBlank() } ?: return null
+    return raw.lines()
+        .map { it.trim().trimStart('#', '-', '*', ' ').trim() }
+        .filter { it.isNotEmpty() }
+        .take(8)
+        .joinToString("\n")
+        .take(300)
+        .ifBlank { null }
 }

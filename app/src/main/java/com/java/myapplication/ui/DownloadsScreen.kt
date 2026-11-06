@@ -356,7 +356,10 @@ fun DownloadTaskCard(task: DlTask, context: android.content.Context, compact: Bo
                         DlStatus.PENDING -> "连接中…"
                         else -> buildString {
                             append("${humanSize(task.done)} / ${humanSize(task.total)}  ·  ${humanSize(task.speed)}/s")
-                            if (task.lineCount > 1 && task.lineIndex > 0) append("  ·  线路${task.lineIndex}/${task.lineCount}")
+                            if (task.lineCount > 1 && task.lineIndex > 0) {
+                                append("  ·  线路${task.lineIndex}/${task.lineCount}")
+                                if (task.lineName.isNotBlank()) append("（${task.lineName}）")
+                            }
                         }
                     }
                     Text(

@@ -335,7 +335,9 @@ class BrowserViewModel : ViewModel() {
                         2 -> Downloader.enqueueExternal(context, url, mime, Settings.dlExternalPackage)
                         else -> Downloader.enqueue(
                             context, url, nameHint = name, ua = ua, mime = mime,
-                            contentDisposition = contentDisposition
+                            contentDisposition = contentDisposition,
+                            // GitHub 资源自动展开成「直链 + 各加速」，交给下载器并发测速选最快
+                            mirrors = UpdateChecker.mirrorUrls(url)
                         )
                     }
                     Toast.makeText(context, "开始下载：$name", Toast.LENGTH_SHORT).show()

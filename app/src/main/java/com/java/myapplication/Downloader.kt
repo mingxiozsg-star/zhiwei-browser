@@ -20,6 +20,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlin.coroutines.coroutineContext
@@ -55,6 +56,10 @@ class DlTask(
     var resolvedUrl: String? = null
     /** 当前使用第几条线路（1 起，用于状态展示） */
     var lineIndex by mutableIntStateOf(0)
+    /** 当前线路的名字（域名/直连），便于判断走了哪个加速源 */
+    var lineName by mutableStateOf("")
+    /** .part 临时文件属于哪条线路；不同源字节不能混写 */
+    var partFrom: String? = null
     val lineCount: Int get() = candidateUrls.size
     val candidateUrls: List<String> get() = (listOf(url) + mirrors).distinct()
     val progress: Float get() = if (total > 0) (done.toFloat() / total).coerceIn(0f, 1f) else 0f
@@ -155,9 +160,17 @@ object Downloader {
         task.speed = 0
     }
 
+    /** 重试 = 彻底重来：丢掉上次的残片与线路归属，否则会拿截断的分片往下接 */
     fun retry(context: Context, task: DlTask) {
+        val app = context.applicationContext
         task.done = 0
-        start(context.applicationContext, task, null, null)
+        task.total = -1L
+        task.resolvedUrl = null
+        task.partFrom = null
+        task.lineIndex = 0
+        task.lineName = ""
+        runCatching { tempFile(app.cacheDir, task.displayName).delete() }
+        start(app, task, null, null)
     }
 
     fun remove(task: DlTask) {
@@ -175,32 +188,95 @@ object Downloader {
     }
 
     /**
-     * 多线路下载：按「原始地址 → 各备用（加速代理）」顺序尝试，任一线路成功即结束。
-     * 换线路时强制从 0 开始（不同源的字节内容未必一致，续传会毁文件）。
+     * 多线路下载：先把所有候选线路并发测速，最快的先下；
+     * 中途失败就换成下一条最快的，全部失败才判 FAILED。
      */
     private suspend fun runDownload(app: Context, task: DlTask, ua: String?, referer: String?) = withContext(Dispatchers.IO) {
         val candidates = task.candidateUrls
+        val part = tempFile(app.cacheDir, task.displayName)
+        // 暂停后续传：先回到原来那条线路，Range 才能接上
+        val resumeLine = task.partFrom?.takeIf { part.exists() && part.length() > 0 && task.done > 0 }
+        val ordered: List<String> = when {
+            resumeLine != null -> listOf(resumeLine) + candidates.filter { it != resumeLine }
+            candidates.size > 1 -> {
+                task.message = "测速选线中（${candidates.size} 条）…"
+                rankLines(candidates, ua, referer)
+            }
+            else -> candidates
+        }
         var lastError: Exception? = null
-        for ((index, candidate) in candidates.withIndex()) {
+        for ((index, candidate) in ordered.withIndex()) {
             if (task.status == DlStatus.CANCELED) throw kotlinx.coroutines.CancellationException("canceled")
             task.lineIndex = index + 1
-            val resumeFrom = if (index == 0) {
-                tempFile(app.cacheDir, task.displayName).takeIf { it.exists() }?.length() ?: 0L
-            } else 0L
+            task.lineName = lineLabel(candidate)
             try {
-                downloadFrom(app, task, candidate, ua, referer, resumeFrom)
+                downloadFrom(app, task, candidate, ua, referer)
                 return@withContext
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
             } catch (e: Exception) {
                 lastError = e
                 task.speed = 0
-                if (index + 1 < candidates.size) {
-                    task.message = "线路 ${index + 1}/${candidates.size} 失败（${e.message ?: "网络错误"}），切换备用…"
+                if (index + 1 < ordered.size) {
+                    task.message = "线路 ${index + 1}/${ordered.size}（${lineLabel(candidate)}）失败：${e.message ?: "网络错误"}，切换备用…"
                 }
             }
         }
+        // 所有线路都没成：删掉半成品，避免下次被当成可续传的残片
+        runCatching { if (part.exists()) part.delete() }
         throw lastError ?: IllegalStateException("下载失败")
+    }
+
+    /** 线路显示名：GitHub 直连 / 加速代理域名 */
+    fun lineLabel(url: String): String = runCatching {
+        if (url.startsWith("https://github.com") || url.startsWith("http://github.com")) "GitHub 直连"
+        else URL(url).host?.removePrefix("www.") ?: "线路"
+    }.getOrDefault("线路")
+
+    /**
+     * 并发测速：对每条线路发一个 Range: bytes=0-32767 的小请求，
+     * 量「连上 + 收到首批字节」的耗时，耗时短的排前面。
+     * 测不通的排到最后（仍然会试，避免探测被拒但实际能下）。
+     */
+    private suspend fun rankLines(candidates: List<String>, ua: String?, referer: String?): List<String> =
+        withContext(Dispatchers.IO) {
+            val scored = candidates.map { c -> async { c to probeLine(c, ua, referer) } }.map { it.await() }
+            val ok = scored.filter { it.second >= 0 }.sortedBy { it.second }.map { it.first }
+            val bad = scored.filter { it.second < 0 }.map { it.first }
+            if (ok.isEmpty()) candidates else ok + bad
+        }
+
+    /** 单线路测速，返回耗时（毫秒），失败返回 -1 */
+    private fun probeLine(url: String, ua: String?, referer: String?): Long {
+        val conn = try {
+            (URL(url).openConnection() as HttpURLConnection).apply {
+                instanceFollowRedirects = true
+                connectTimeout = 3_500
+                readTimeout = 3_500
+                setRequestProperty("Accept", "*/*")
+                setRequestProperty("Accept-Encoding", "identity")
+                setRequestProperty("Range", "bytes=0-32767")
+                setRequestProperty(
+                    "User-Agent",
+                    ua?.takeIf { it.isNotBlank() } ?: "Mozilla/5.0 (Linux; Android) ZhiweiBrowser"
+                )
+                referer?.let { setRequestProperty("Referer", it) }
+                cookieOf(url)?.let { setRequestProperty("Cookie", it) }
+            }
+        } catch (e: Exception) {
+            return -1
+        }
+        val t0 = System.nanoTime()
+        return try {
+            conn.connect()
+            if (conn.responseCode >= 400) return -1
+            val n = conn.inputStream.use { it.read(ByteArray(16 * 1024)) }
+            if (n <= 0) -1 else (System.nanoTime() - t0) / 1_000_000
+        } catch (e: Exception) {
+            -1
+        } finally {
+            runCatching { conn.disconnect() }
+        }
     }
 
     /**
@@ -210,10 +286,13 @@ object Downloader {
      * OAuth / 带签名参数的下载链（直链 → 302 CDN）会因此拿到 403；手动跟随可按当前域名重注 Cookie。
      */
     private suspend fun downloadFrom(
-        app: Context, task: DlTask, rawUrl: String, ua: String?, referer: String?, resumeFrom: Long
+        app: Context, task: DlTask, rawUrl: String, ua: String?, referer: String?
     ) {
         val tmp = tempFile(app.cacheDir, task.displayName)
-        val existing = resumeFrom
+        // .part 归属：只有同一条线路才允许续传，不同源的字节混写会毁文件
+        val sameLine = task.partFrom == rawUrl
+        val existing = if (sameLine && tmp.exists()) tmp.length() else 0L
+        if (!sameLine && tmp.exists()) tmp.delete()
         val opened = openFollowingRedirects(app, rawUrl, ua, referer, existing)
         val conn = opened.first
         try {
@@ -227,6 +306,7 @@ object Downloader {
             task.done = startAt
             task.resumable = code == 206
             task.resolvedUrl = opened.second
+            task.partFrom = rawUrl
             task.status = DlStatus.RUNNING
             task.message = null
 
@@ -251,7 +331,15 @@ object Downloader {
                 }
             }
             task.speed = 0
-            if (task.status == DlStatus.CANCELED) throw kotlinx.coroutines.CancellationException("canceled")
+            // 暂停 / 取消：绝不能把半成品当完成品落盘（否则会得到一个看起来完成、其实截断的文件）
+            if (!coroutineContext.isActiveSafe() || task.status == DlStatus.PAUSED || task.status == DlStatus.CANCELED) {
+                throw kotlinx.coroutines.CancellationException("interrupted")
+            }
+            // 完整性校验：服务端提前断开时不能默默判成功，交给下一条线路重来
+            val expect = task.total
+            if (expect > 0 && tmp.length() < expect) {
+                throw IllegalStateException("下载不完整（${tmp.length()}/$expect 字节）")
+            }
         } finally {
             runCatching { conn.disconnect() }
         }

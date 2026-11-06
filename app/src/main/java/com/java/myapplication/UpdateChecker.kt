@@ -1,6 +1,8 @@
 package com.java.myapplication
 
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.net.HttpURLConnection
@@ -55,16 +57,56 @@ object UpdateChecker {
         return out.toList()
     }
 
-    /** 检查更新：逐通道尝试，返回首个成功结果 */
+    /** 检查更新：所有通道并发竞速，谁先返回有效结果用谁，其余立刻取消 */
     suspend fun latest(): ReleaseInfo = withContext(Dispatchers.IO) {
-        var lastError: Exception? = null
-        for (prefix in PROXIES) {
-            val label = if (prefix.isBlank()) "直连" else prefix.trimEnd('/').substringAfterLast('/')
-            runCatching { fetchOne(prefix + API_PATH, label) }
-                .onSuccess { return@withContext it }
-                .onFailure { lastError = it as? Exception ?: Exception(it) }
+        val channels = PROXIES.map { prefix ->
+            val label = labelOf(prefix)
+            label to async { runCatching { fetchOne(prefix + API_PATH, label) } }
         }
-        throw lastError ?: IllegalStateException("所有更新通道均不可用")
+        val deadline = System.currentTimeMillis() + 12_000
+        var winner: ReleaseInfo? = null
+        val errors = ArrayList<String>()
+        while (winner == null) {
+            for ((label, job) in channels) {
+                if (!job.isCompleted) continue
+                job.getCompleted()
+                    .onSuccess { if (winner == null) winner = it }
+                    .onFailure { e ->
+                        val line = "$label：${e.message ?: "失败"}"
+                        if (errors.none { it == line }) errors.add(line)
+                    }
+            }
+            if (winner != null) break
+            if (channels.all { it.second.isCompleted }) break
+            if (System.currentTimeMillis() > deadline) break
+            delay(80)
+        }
+        channels.forEach { it.second.cancel() }
+        winner ?: throw IllegalStateException(
+            "更新通道全部不可用" + errors.take(2).joinToString("", "（", "）") { it }
+        )
+    }
+
+    /** 通道显示名 */
+    private fun labelOf(prefix: String): String =
+        if (prefix.isBlank()) "直连" else prefix.trimEnd('/').substringAfterLast('/')
+
+    /**
+     * 版本号比较：远端是否比本地新。
+     * 按数字段逐段比（1.10.0 > 1.8.1），解析不出来时退回字符串比较。
+     */
+    fun isNewer(remote: String, local: String): Boolean {
+        fun nums(v: String) = v.trim().removePrefix("v")
+            .split(Regex("[^0-9]+")).filter { it.isNotEmpty() }.mapNotNull { it.toIntOrNull() }
+        val r = nums(remote)
+        val l = nums(local)
+        if (r.isEmpty() || l.isEmpty()) return remote.trim() != local.trim()
+        for (i in 0 until maxOf(r.size, l.size)) {
+            val a = r.getOrElse(i) { 0 }
+            val b = l.getOrElse(i) { 0 }
+            if (a != b) return a > b
+        }
+        return false
     }
 
     private fun fetchOne(url: String, label: String): ReleaseInfo {

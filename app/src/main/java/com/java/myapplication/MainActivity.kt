@@ -76,6 +76,9 @@ class MainActivity : ComponentActivity() {
         Store.init(this)
         vm = ViewModelProvider(this)[BrowserViewModel::class.java]
 
+        // 网页文件上传：选择结果必须经 Activity 的 launcher 才能回传给 WebView
+        vm.onLaunchFileChooser = { intent -> fileChooserLauncher.launch(intent) }
+
         // 恢复会话或新建
         if (vm.tabs.isEmpty()) {
             val external = intent?.let { extractUrl(it) }
@@ -144,11 +147,11 @@ class MainActivity : ComponentActivity() {
                     "settings" -> SettingsScreen(vm) { navDir = -1; screen = "browser" }
                     "bookmarks" -> BookmarksScreen(
                         onBack = { navDir = -1; screen = "browser" },
-                        onOpen = { url -> vm.current?.webView?.loadUrl(url) ?: vm.addTab(this@MainActivity, url); navDir = -1; screen = "browser" }
+                        onOpen = { url -> vm.openUrl(this@MainActivity, url); navDir = -1; screen = "browser" }
                     )
                     "history" -> HistoryScreen(
                         onBack = { navDir = -1; screen = "browser" },
-                        onOpen = { url -> vm.current?.webView?.loadUrl(url) ?: vm.addTab(this@MainActivity, url); navDir = -1; screen = "browser" }
+                        onOpen = { url -> vm.openUrl(this@MainActivity, url); navDir = -1; screen = "browser" }
                     )
                     "downloads" -> DownloadsScreen(
                         onBack = { navDir = -1; screen = "browser" },
@@ -178,10 +181,11 @@ class MainActivity : ComponentActivity() {
                         BackHandler {
                             val tab = vm.current
                             when {
-                                vm.fullscreenView != null -> vm.current?.webView?.webChromeClient?.onHideCustomView()
-                                tab?.webView?.canGoBack() == true -> tab.webView?.goBack()
-                                tab != null && !tab.isHome -> vm.goHome(tab)
-                                else -> {
+                                vm.fullscreenView != null ->
+                                    vm.current?.webView?.webChromeClient?.onHideCustomView()
+                                // 内置主页没有「上一页」这个概念，直接走退出确认
+                                tab == null || tab.isHome -> {
+                                    tab?.webView?.clearHistory()
                                     val now = System.currentTimeMillis()
                                     if (now - lastBackAt < 2000) finish()
                                     else {
@@ -191,6 +195,7 @@ class MainActivity : ComponentActivity() {
                                         ).show()
                                     }
                                 }
+                                else -> vm.current?.let { backFromPage(vm, it) }
                             }
                         }
                     }
@@ -238,4 +243,12 @@ class MainActivity : ComponentActivity() {
         }
         super.onDestroy()
     }
+}
+
+/**
+ * 浏览页的系统返回键：
+ * 站内还有历史就后退，否则回内置主页（主页是应用自己的界面，不是网页）。
+ */
+private fun backFromPage(vm: BrowserViewModel, tab: Tab) {
+    if (tab.webView?.canGoBack() == true) tab.webView?.goBack() else vm.goHome(tab)
 }

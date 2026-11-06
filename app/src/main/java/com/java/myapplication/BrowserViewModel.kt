@@ -52,6 +52,10 @@ class Tab(val id: Long) {
     /** 从主页搜索进入时，地址栏显示搜索词而非引擎URL */
     var searchQuery by mutableStateOf("")
     var pendingSearch: String? = null
+    /** 正在把 WebView 清成空白页（回主页），此期间的加载回调不是真实浏览 */
+    var blanking = false
+    /** 页面加载完成后清空历史（从主页打开的第一个页面用它去掉多余的历史项） */
+    var clearOnFinish = false
 }
 
 class BrowserViewModel : ViewModel() {
@@ -82,12 +86,33 @@ class BrowserViewModel : ViewModel() {
         return tab
     }
 
-    /** 回主页：内置主页不触发 WebView 加载 */
+    /**
+     * 回主页。
+     *
+     * 内置主页不是网页，必须同时清掉 WebView 的画面与历史：
+     *  - 不清画面：下次从主页点开链接，WebView 重新上屏会先闪出上一页的残留内容；
+     *  - 不清历史：新页面会叠在旧页面的历史上，按返回要退两次才能回到主页。
+     */
     fun goHome(tab: Tab) {
-        tab.url = Settings.homepage
         tab.loadError = false
         tab.searchQuery = ""
-        if (!Settings.homepage.startsWith("zhiwei://")) {
+        tab.pendingSearch = null
+        tab.isLoading = false
+        tab.progress = 0
+        tab.title = "新标签页"
+        tab.canGoBack = false
+        tab.canGoForward = false
+        tab.url = Settings.homepage
+        if (Settings.homepage.startsWith("zhiwei://")) {
+            // 用 about:blank 顶掉旧页面（清屏）；历史的最终清理在 onPageFinished 里做
+            tab.blanking = true
+            tab.clearOnFinish = false
+            tab.webView?.let { w ->
+                w.stopLoading()
+                w.loadUrl("about:blank")
+            }
+        } else {
+            tab.blanking = false
             tab.webView?.loadUrl(Settings.homepage)
         }
     }
@@ -95,6 +120,7 @@ class BrowserViewModel : ViewModel() {
     /** 从主页发起搜索/导航，地址栏显示原始输入 */
     fun homeNavigate(tab: Tab, input: String) {
         val target = Settings.toUrl(input)
+        val fromHome = tab.isHome          // 必须在改写 url 之前判断
         val isSearch = !target.startsWith("http") || target == Settings.searchUrl(input)
         tab.pendingSearch = if (isSearch || !input.contains(".")) input else null
         // 乐观更新：立即脱离主页态并进入加载画面，不等慢站点 onPageStarted
@@ -103,7 +129,16 @@ class BrowserViewModel : ViewModel() {
         tab.loadError = false
         tab.isLoading = true
         tab.progress = 5
+        tab.blanking = false
+        // 从主页打开的页面：加载完成后清空历史，返回键直接回主页
+        if (fromHome) tab.clearOnFinish = true
         tab.webView?.loadUrl(target)
+    }
+
+    /** 书签 / 历史等入口打开网址：复用当前标签，走同一套导航逻辑 */
+    fun openUrl(context: Context, url: String) {
+        val tab = current
+        if (tab == null) addTab(context, url) else homeNavigate(tab, url)
     }
 
     fun closeTab(index: Int) {
@@ -258,19 +293,28 @@ class BrowserViewModel : ViewModel() {
     }
 
     // ---------------- 下载 ----------------
-    /** 常见可下载文件扩展名（直链兜底检测） */
+    /**
+     * 点链接时直接走下载的文件类型。
+     * 只列「WebView 渲染不了」的：安装包、压缩包、可执行文件、文档、音视频、PDF。
+     * 图片 / txt / json / xml 等交给 WebView 正常显示（要保存走长按菜单），
+     * 否则点一下就弹下载框，看起来就是「网页没显示出来」。
+     */
     private val downloadExts = listOf(
         ".apk", ".zip", ".rar", ".7z", ".tar", ".gz", ".exe", ".msi", ".dmg",
-        ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx",
-        ".mp3", ".wav", ".flac", ".mp4", ".mkv", ".avi", ".mov",
-        ".jpg", ".jpeg", ".png", ".gif", ".webp", ".psd",
-        ".txt", ".csv", ".json", ".xml", ".epub", ".mobi"
+        ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".epub", ".mobi",
+        ".mp3", ".wav", ".flac", ".mp4", ".mkv", ".avi", ".mov"
     )
 
     fun isDownloadLink(url: String): Boolean {
         val path = Uri.parse(url).path?.lowercase() ?: return false
         return downloadExts.any { path.endsWith(it) }
     }
+
+    /** 翻译代理域名：命中说明当前已经在翻译页里，不能再跳一次翻译（否则会无限转圈） */
+    private val translateHosts = listOf(
+        "translate.google", "translate.googleapis", "translate.goog",
+        "translate.bing", "translate.yandex", "fanyi.baidu", "translate.qq"
+    )
 
     /** 弹出下载确认框；确认后按用户设置的下载引擎分派 */
     fun promptDownload(context: Context, url: String, ua: String?, contentDisposition: String?, mime: String?) {
@@ -375,6 +419,8 @@ class BrowserViewModel : ViewModel() {
         }
 
         override fun onPageStarted(view: WebView, url: String, favicon: Bitmap?) {
+            // 回主页时的清屏导航（about:blank）不是真实浏览，不要回写标签状态
+            if (tab.blanking || url == "about:blank") return
             tab.isLoading = true
             tab.url = url
             tab.loadError = false
@@ -390,15 +436,30 @@ class BrowserViewModel : ViewModel() {
         }
 
         override fun onPageFinished(view: WebView, url: String) {
+            // 回主页的清屏：只留下这一条空白历史，界面继续停在内置主页
+            if (tab.blanking || url == "about:blank") {
+                if (tab.blanking) {
+                    tab.blanking = false
+                    view.clearHistory()
+                    updateNav(tab, view)
+                }
+                return
+            }
             tab.isLoading = false
             tab.url = view.url ?: url
             tab.title = view.title?.takeIf { it.isNotBlank() } ?: url
+            // 从主页打开的第一个页面：清掉空白主页那一条历史，返回键即回主页
+            if (tab.clearOnFinish) {
+                tab.clearOnFinish = false
+                view.clearHistory()
+            }
             updateNav(tab, view)
             Store.addHistory(tab.title, tab.url)
             // 自动整页翻译：非翻译代理页面且是 http 页面时，跳转翻译（翻译代理内链接天然持续翻译）
+            // 注意要排除所有翻译代理域名，否则「翻译页再被翻译」会反复跳转、页面一直转圈
             if (Settings.autoTranslate
                 && tab.url.startsWith("http")
-                && !tab.url.contains("translate.google")
+                && translateHosts.none { tab.url.contains(it) }
             ) {
                 view.post { view.loadUrl(Settings.pageTranslateUrl(tab.url)) }
             }
@@ -479,7 +540,10 @@ class BrowserViewModel : ViewModel() {
             fileChooserCallback?.onReceiveValue(null)
             fileChooserCallback = filePathCallback
             return try {
-                webView.context.startActivity(fileChooserParams.createIntent())
+                val intent = fileChooserParams.createIntent()
+                // 必须交给 Activity 的 launcher 启动，否则拿不到选择结果，网页上传会一直没反应
+                val launcher = onLaunchFileChooser
+                if (launcher != null) launcher(intent) else webView.context.startActivity(intent)
                 true
             } catch (e: Exception) {
                 fileChooserCallback = null
@@ -523,6 +587,9 @@ class BrowserViewModel : ViewModel() {
     }
 
     var onFullscreenChange: ((Boolean) -> Unit)? = null
+
+    /** 由 Activity 提供的文件选择启动器（网页 <input type="file"> 用） */
+    var onLaunchFileChooser: ((Intent) -> Unit)? = null
 
     fun clearAllData(context: Context) {
         android.webkit.WebStorage.getInstance().deleteAllData()

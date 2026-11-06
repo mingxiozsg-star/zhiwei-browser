@@ -473,11 +473,27 @@ private fun FindBar(
     }
 }
 
+/**
+ * WebView 宿主。
+ *
+ * 之前把「把 View 从父容器摘下来」写进了 update 里，而 update 在重组时会反复执行，
+ * 于是 WebView 被不断摘离窗口、停止绘制 —— 表现就是网页白屏、页面不显示。
+ * 现在只在创建宿主时摘一次（切换标签/切换页面复用同一个 WebView 才需要），
+ * 展示期间 WebView 始终挂在窗口上。
+ */
 @Composable
 private fun WebContent(tab: Tab, vm: BrowserViewModel) {
     AndroidView(
-        factory = { ctx -> vm.ensureWebView(ctx, tab) },
-        update = { w -> (w.parent as? android.view.ViewGroup)?.removeView(w) },
+        factory = { ctx ->
+            val w = vm.ensureWebView(ctx, tab)
+            // 复用的 WebView 可能还挂在旧宿主上，先摘下来，否则宿主挂载时会 "already has a parent"
+            (w.parent as? android.view.ViewGroup)?.removeView(w)
+            w.layoutParams = android.view.ViewGroup.LayoutParams(
+                android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+                android.view.ViewGroup.LayoutParams.MATCH_PARENT
+            )
+            w
+        },
         modifier = Modifier.fillMaxSize()
     )
 }

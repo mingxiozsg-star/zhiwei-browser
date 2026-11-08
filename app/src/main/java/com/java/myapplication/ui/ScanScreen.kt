@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBarsPadding
@@ -328,9 +329,7 @@ fun ScanResultDialog(
 }
 
 /** 结果文本最多占半屏，超长内容不撑爆弹窗 */
-private fun Modifier.heightInSafe(): Modifier = this.then(
-    androidx.compose.foundation.layout.heightIn(max = 240.dp)
-)
+private fun Modifier.heightInSafe(): Modifier = this.heightIn(max = 240.dp)
 
 /** 扫码结果的外部跳转（电话 / 邮件 / 短信 / 地图） */
 fun openExternal(context: android.content.Context, hit: ScanHit): Boolean = runCatching {

@@ -51,7 +51,11 @@ Release build is just **1.5 MB** — no ad SDK, no analytics, no background serv
 - **网页操作（工具调用）** —— AI 能直接读页面、打开网址、点按钮、填搜索框、滚动、返回，按用户意图自己动手，每次操作都能在对话里看到痕迹
 - **Web actions (tool calling)** — the AI can read pages, open URLs, click buttons, fill inputs, scroll and go back on its own, and every action shows up in the chat
 - **帮你下载应用** —— 找到下载入口后直接把文件（含 APK 安装包）加入下载队列，自动挂加速线路
-- **Download on request** —— once it finds the download link, files (APKs included) go straight into the download queue with mirror acceleration
+- **Download on request** — once it finds the download link, files (APKs included) go straight into the download queue with mirror acceleration
+- **联网搜索** —— AI 会真的去搜索引擎查，再打开候选页核对内容，找官网 / 找资料不用你给网址，也不会凭记忆瞎编
+- **Web search** — the AI runs a real search, then opens and checks the candidate pages, so you don't have to hand it a URL and it won't invent one
+- **页内查找与按序号点击** —— 能在页面里定位关键词读回上下文，也能按「第几个可点项」来点
+- **Find in page & click by index** — locate a keyword and read the surrounding text, or click the Nth clickable item
 - **网页助手提示** —— 英文页先问要不要翻译、长文页问要不要总结，支持按站点免打扰
 - **Assist prompts** — English pages ask before translating, long pages offer a summary, with per-site mute
 - **模型可见** —— AI 面板直接显示当前所用模型

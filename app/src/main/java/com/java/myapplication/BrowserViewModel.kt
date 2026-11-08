@@ -701,6 +701,19 @@ class BrowserViewModel : ViewModel() {
 
     // ==================== AI 网页操作工具 ====================
 
+    /** 按指定引擎拼搜索地址（与设置里的搜索引擎保持一致，另支持 360） */
+    private fun searchUrlWith(engine: String, query: String): String {
+        val q = java.net.URLEncoder.encode(query, "UTF-8")
+        return when (engine.lowercase()) {
+            "baidu" -> "https://www.baidu.com/s?wd=$q"
+            "sogou" -> "https://www.sogou.com/web?query=$q"
+            "360", "so", "so360" -> "https://www.so.com/s?q=$q"
+            "google" -> "https://www.google.com/search?q=$q"
+            "duckduckgo", "ddg" -> "https://duckduckgo.com/?q=$q"
+            else -> "https://www.bing.com/search?q=$q"
+        }
+    }
+
     /** 在 tab 上跑一段 JS 并取回字符串结果 */
     private suspend fun evalJs(tab: Tab, js: String): String = suspendCancellableCoroutine { cont ->
         val wv = tab.webView
@@ -774,6 +787,103 @@ class BrowserViewModel : ViewModel() {
                 }
             }
 
+            AiTools.WEB_SEARCH -> {
+                val q = args.optString("query").trim()
+                if (q.isBlank()) return "缺少 query：要搜什么？"
+                val wv = tab.webView ?: return "浏览器还没准备好"
+                val engine = args.optString("engine").trim().ifBlank { Settings.searchEngine }
+                val limit = args.optInt("limit", 8).coerceIn(3, 15)
+                val url = searchUrlWith(engine, q)
+                tab.url = url
+                wv.loadUrl(url)
+                awaitPage(tab, 12000)
+                kotlinx.coroutines.delay(500)
+                val js = """
+                    (function(){
+                      var limit=__LIMIT__;
+                      var selfRe=/(^|\.)(bing\.com|baidu\.com|google\.|sogou\.com|so\.com|duckduckgo\.com|microsoft\.com|msn\.com)$/i;
+                      var out=[],seen={};
+                      function push(t,u,s){
+                        if(!u||u.indexOf('http')!==0) return;
+                        try{
+                          var h=new URL(u).hostname;
+                          if(selfRe.test(h) && u.indexOf('/link?')<0 && u.indexOf('url=')<0) return;
+                        }catch(e){ return; }
+                        if(seen[u]) return; seen[u]=1;
+                        out.push({t:((t||'')+'').replace(/\s+/g,' ').trim().slice(0,120),
+                                  u:u.slice(0,300),
+                                  s:((s||'')+'').replace(/\s+/g,' ').trim().slice(0,180)});
+                      }
+                      var boxes=document.querySelectorAll('li.b_algo, div.g, .result, .result-item, .vrwrap, .res-list, .c-container, .b_algo, article');
+                      for(var i=0;i<boxes.length && out.length<limit;i++){
+                        var b=boxes[i];
+                        var a=b.querySelector('h2 a[href], h3 a[href], a[href]');
+                        if(!a) continue;
+                        var sn=b.querySelector('.b_caption p, .c-abstract, .st, .fz-mid, .content-right_8Zs40, p');
+                        push(a.innerText, a.href, sn?sn.innerText:'');
+                      }
+                      if(out.length===0){
+                        var ls=document.querySelectorAll('a[href^=http]');
+                        for(var j=0;j<ls.length && out.length<limit;j++) push(ls[j].innerText, ls[j].href, '');
+                      }
+                      return JSON.stringify({url:location.href,items:out});
+                    })();
+                """.trimIndent().replace("__LIMIT__", limit.toString())
+                val o = runCatching { JSONObject(evalJs(tab, js)) }.getOrNull()
+                    ?: return "搜索页读取失败。可以直接用 web_open 打开目标网址。"
+                val items = o.optJSONArray("items")
+                if (items == null || items.length() == 0) {
+                    return "搜索「$q」没拿到结果（可能被验证码或跳转拦住）。换个关键词，或直接 web_open 已知网址。"
+                }
+                buildString {
+                    append("搜索「").append(q).append("」（").append(engine).append("）结果 ")
+                    append(items.length()).append(" 条：\n")
+                    for (i in 0 until items.length()) {
+                        val it = items.optJSONObject(i) ?: continue
+                        append(i + 1).append(". ").append(it.optString("t")).append("\n")
+                        append("   ").append(it.optString("u")).append("\n")
+                        val s = it.optString("s")
+                        if (s.isNotBlank()) append("   ").append(s).append("\n")
+                    }
+                    append("挑官网：选域名与官方品牌一致的条目，跳过下载站 / 聚合站 / 排行站；打开候选页核对后再下结论。")
+                }
+            }
+
+            AiTools.WEB_FIND -> {
+                val kw = args.optString("keyword").trim()
+                if (kw.isBlank()) return "缺少 keyword：要找什么词？"
+                val limit = args.optInt("limit", 5).coerceIn(1, 10)
+                awaitPage(tab, 3000)
+                val js = """
+                    (function(){
+                      var kw=__KW__, limit=__LIMIT__;
+                      var txt=((document.body&&document.body.innerText)||'').replace(/\s+/g,' ');
+                      var low=txt.toLowerCase(), k=kw.toLowerCase(), from=0, n=0, hits=[];
+                      while(n<limit){
+                        var i=low.indexOf(k, from);
+                        if(i<0) break;
+                        var s=Math.max(0,i-90), e=Math.min(txt.length, i+k.length+140);
+                        hits.push((s>0?'…':'')+txt.slice(s,e)+(e<txt.length?'…':''));
+                        from=i+k.length; n++;
+                      }
+                      return JSON.stringify({title:document.title,url:location.href,count:hits.length,hits:hits});
+                    })();
+                """.trimIndent()
+                    .replace("__KW__", JSONObject.quote(kw))
+                    .replace("__LIMIT__", limit.toString())
+                val o = runCatching { JSONObject(evalJs(tab, js)) }.getOrNull()
+                    ?: return "页内查找失败（页面可能还没加载完）"
+                val hits = o.optJSONArray("hits")
+                if (hits == null || hits.length() == 0) {
+                    return "这一页没有出现「$kw」。标题：${o.optString("title")}　网址：${o.optString("url")}"
+                }
+                buildString {
+                    append("页面《").append(o.optString("title")).append("》").append(o.optString("url"))
+                    append(" 里「").append(kw).append("」出现 ").append(hits.length()).append(" 处：\n")
+                    for (i in 0 until hits.length()) append("- ").append(hits.optString(i)).append("\n")
+                }
+            }
+
             AiTools.WEB_OPEN -> {
                 var u = args.optString("url").trim()
                 if (!u.startsWith("http")) {
@@ -801,6 +911,18 @@ class BrowserViewModel : ViewModel() {
                       var tg=__TARGET__;
                       function vis(e){var r=e.getBoundingClientRect();return r.width>1&&r.height>1;}
                       var el=null;
+                      if(/^\d+$/.test(tg)){
+                        var all=document.querySelectorAll('a[href],button,[role=button],input[type=submit],input[type=button],summary,label');
+                        var list=[];
+                        for(var i=0;i<all.length;i++){
+                          var e0=all[i]; if(!vis(e0)) continue;
+                          var t0=((e0.innerText||e0.value||e0.getAttribute('aria-label')||'')+'').replace(/\s+/g,' ').trim();
+                          if(!t0) continue;
+                          list.push(e0);
+                        }
+                        var n=parseInt(tg,10)-1;
+                        if(n>=0&&n<list.length) el=list[n];
+                      }
                       try{ var q=document.querySelector(tg); if(q&&vis(q)) el=q; }catch(e){}
                       if(!el){
                         var c=document.querySelectorAll('a,button,[role=button],input[type=submit],input[type=button],summary,label');

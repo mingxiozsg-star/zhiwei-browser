@@ -11,6 +11,8 @@ object AiTools {
 
     const val WEB_READ = "web_read"
     const val WEB_LINKS = "web_links"
+    const val WEB_FIND = "web_find"
+    const val WEB_SEARCH = "web_search"
     const val WEB_OPEN = "web_open"
     const val WEB_CLICK = "web_click"
     const val WEB_TYPE = "web_type"
@@ -51,6 +53,25 @@ object AiTools {
         )
         .put(
             fn(
+                WEB_SEARCH, "用搜索引擎检索互联网，返回若干条结果的标题、网址与摘要。找官网、找资料、找下载时先用它——" +
+                    "不要凭记忆猜网址。拿到结果后打开候选页核对，确认是官方页面再回答。",
+                JSONObject()
+                    .put("query", prop("string", "搜索关键词，越具体越好"))
+                    .put("engine", prop("string", "可选：bing / baidu / sogou / 360 / google / duckduckgo，默认用浏览器的搜索引擎")),
+                listOf("query")
+            )
+        )
+        .put(
+            fn(
+                WEB_FIND, "在当前网页里查找关键词，返回出现位置的上下文片段。用来核对「这一页是不是我要找的那个」。",
+                JSONObject()
+                    .put("keyword", prop("string", "要查找的关键词"))
+                    .put("limit", prop("integer", "最多返回几处，默认 5")),
+                listOf("keyword")
+            )
+        )
+        .put(
+            fn(
                 WEB_OPEN, "在浏览器里打开一个网址。",
                 JSONObject()
                     .put("url", prop("string", "完整网址，必须带 http:// 或 https://"))
@@ -60,8 +81,9 @@ object AiTools {
         )
         .put(
             fn(
-                WEB_CLICK, "点击网页上的元素。target 可以是元素的可见文字（如「下载」），也可以是 CSS 选择器（以 # . [ 开头）。",
-                JSONObject().put("target", prop("string", "元素可见文字或 CSS 选择器")),
+                WEB_CLICK, "点击网页上的元素。target 可以是元素的可见文字（如「下载」），也可以是 CSS 选择器（以 # . [ 开头），" +
+                    "还可以是数字序号（配合 web_links 返回的序号，点第几个）。",
+                JSONObject().put("target", prop("string", "元素可见文字 / CSS 选择器 / 序号")),
                 listOf("target")
             )
         )
@@ -100,6 +122,8 @@ object AiTools {
     fun summaryOf(name: String, args: JSONObject): String = when (name) {
         WEB_READ -> "读取网页内容"
         WEB_LINKS -> "查看页面链接"
+        WEB_FIND -> "页内查找「" + args.optString("keyword").take(20) + "」"
+        WEB_SEARCH -> "搜索「" + args.optString("query").take(30) + "」"
         WEB_OPEN -> "打开 " + args.optString("url").take(60)
         WEB_CLICK -> "点击「" + args.optString("target").take(24) + "」"
         WEB_TYPE -> "填写「" + args.optString("text").take(20) + "」"

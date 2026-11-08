@@ -56,6 +56,8 @@ class Tab(val id: Long) {
     var blanking = false
     /** 页面加载完成后清空历史（从主页打开的第一个页面用它去掉多余的历史项） */
     var clearOnFinish = false
+    /** 已经为哪个网址弹过网页提示，避免同一页重复打扰 */
+    var cueUrl: String? = null
 }
 
 class BrowserViewModel : ViewModel() {
@@ -271,6 +273,96 @@ class BrowserViewModel : ViewModel() {
         tabs.forEach { it.webView?.let { w -> applySettings(w) } }
     }
 
+    // ---------------- 网页提示：英文页翻译 / 长文总结 / 选中问答 ----------------
+
+    enum class CueKind { TRANSLATE, SUMMARY }
+
+    /** 待用户确认的一条网页提示 */
+    data class PageCue(
+        val kind: CueKind,
+        val title: String,
+        val body: String,
+        val confirm: String,
+        val host: String,
+        val url: String
+    )
+
+    /** 当前待确认的提示；null 表示没有 */
+    var pageCue by mutableStateOf<PageCue?>(null)
+
+    /**
+     * 页面加载完成后探测一次：英文页问要不要翻译，长文页问要不要总结。
+     * 只用轻量 JS 取 lang / 正文长度 / 中英文字符数，不把整页正文拉回客户端。
+     */
+    private fun probePage(tab: Tab, view: WebView) {
+        if (!Settings.assistPrompt) return
+        if (!tab.url.startsWith("http")) return
+        if (tab.url == tab.cueUrl) return          // 同一页只提示一次
+        tab.cueUrl = tab.url
+        val js = """
+            (function(){
+              try{
+                var t = document.body ? (document.body.innerText||'') : '';
+                var lang = (document.documentElement.getAttribute('lang')||'').toLowerCase();
+                var cjk = (t.match(/[\u4e00-\u9fff]/g)||[]).length;
+                var latin = (t.match(/[A-Za-z]/g)||[]).length;
+                return JSON.stringify({lang:lang,len:t.length,cjk:cjk,latin:latin});
+              }catch(e){ return ''; }
+            })();
+        """.trimIndent()
+        view.evaluateJavascript(js) { raw ->
+            val s = unescapeJs(raw ?: "")
+            if (s.isBlank()) return@evaluateJavascript
+            val o = runCatching { org.json.JSONObject(s) }.getOrNull() ?: return@evaluateJavascript
+            val host = runCatching { java.net.URI(tab.url).host ?: "" }.getOrDefault("")
+            if (host.isBlank() || Settings.isAssistMuted(host)) return@evaluateJavascript
+            val lang = o.optString("lang")
+            val len = o.optInt("len")
+            val cjk = o.optInt("cjk")
+            val latin = o.optInt("latin")
+            val english = lang.startsWith("en") || (latin > 240 && cjk < latin / 20)
+            if (english) {
+                pageCue = PageCue(
+                    CueKind.TRANSLATE, "检测到英文页面",
+                    "要不要翻译成 ${Settings.translateTarget}？翻译后站内链接会持续翻译。",
+                    "翻译", host, tab.url
+                )
+            } else if (len >= 900) {
+                pageCue = PageCue(
+                    CueKind.SUMMARY, "这篇页面比较长",
+                    "正文约 $len 个字符，要不要让知微总结一下要点？",
+                    "总结", host, tab.url
+                )
+            }
+        }
+    }
+
+    /** 提示被确认：翻译当前页，或交给界面打开 AI 总结 */
+    fun acceptCue(cue: PageCue, onSummary: () -> Unit) {
+        pageCue = null
+        val tab = current
+        when (cue.kind) {
+            CueKind.TRANSLATE -> if (tab != null && tab.url.startsWith("http")) {
+                tab.webView?.loadUrl(Settings.pageTranslateUrl(tab.url))
+            }
+            CueKind.SUMMARY -> onSummary()
+        }
+    }
+
+    fun dismissCue() { pageCue = null }
+
+    /** 提示不再打扰这个站点 */
+    fun muteCue(cue: PageCue) {
+        Settings.muteAssist(cue.host)
+        pageCue = null
+    }
+
+    /** 取当前选中的文字；没选中时回调空串 */
+    fun selectedText(tab: Tab, onText: (String) -> Unit) {
+        val js = "(function(){try{return (window.getSelection()||'').toString();}catch(e){return '';}})();"
+        tab.webView?.evaluateJavascript(js) { raw -> onText(unescapeJs(raw ?: "").trim()) }
+    }
+
     fun extractPageText(tab: Tab, callback: (String) -> Unit) {
         val js = """
             (function(){
@@ -459,11 +551,12 @@ class BrowserViewModel : ViewModel() {
             Store.addHistory(tab.title, tab.url)
             // 自动整页翻译：非翻译代理页面且是 http 页面时，跳转翻译（翻译代理内链接天然持续翻译）
             // 注意要排除所有翻译代理域名，否则「翻译页再被翻译」会反复跳转、页面一直转圈
-            if (Settings.autoTranslate
-                && tab.url.startsWith("http")
-                && translateHosts.none { tab.url.contains(it) }
-            ) {
+            val translatable = tab.url.startsWith("http") && translateHosts.none { tab.url.contains(it) }
+            if (translatable && Settings.autoTranslate && !Settings.autoTranslateAsk) {
                 view.post { view.loadUrl(Settings.pageTranslateUrl(tab.url)) }
+            } else if (translatable) {
+                // 不直接翻译：交给网页提示问一句「要不要翻译 / 要不要总结」
+                view.post { probePage(tab, view) }
             }
         }
 

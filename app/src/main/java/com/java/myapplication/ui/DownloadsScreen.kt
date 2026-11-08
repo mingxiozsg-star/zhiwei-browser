@@ -371,7 +371,7 @@ fun DownloadTaskCard(task: DlTask, context: android.content.Context, compact: Bo
                     )
                 }
                 when {
-                    task.running -> IconButton(onClick = { Downloader.pause(task) }, modifier = Modifier.size(36.dp)) {
+                    task.running -> IconButton(onClick = { Downloader.pause(task) }, modifier = Modifier.size(48.dp)) {
                         Icon(Icons.Filled.Close, "暂停", tint = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     task.status == DlStatus.PAUSED ->

@@ -303,6 +303,26 @@ object Settings {
         get() = p.getBoolean("auto_translate", false)
         set(v) { p.edit().putBoolean("auto_translate", v).apply(); bump() }
 
+    /** 检测到英文页面时先问一句「要不要翻译」，而不是直接跳翻译页 */
+    var autoTranslateAsk: Boolean
+        get() = p.getBoolean("auto_translate_ask", true)
+        set(v) { p.edit().putBoolean("auto_translate_ask", v).apply(); bump() }
+
+    /** 网页助手主动提示：英文页询问翻译、长文页询问总结 */
+    var assistPrompt: Boolean
+        get() = p.getBoolean("assist_prompt", true)
+        set(v) { p.edit().putBoolean("assist_prompt", v).apply(); bump() }
+
+    /** 已设置为「不再提示」的站点 */
+    fun isAssistMuted(host: String): Boolean =
+        host.isNotBlank() && p.getStringSet("assist_muted", emptySet()).orEmpty().contains(host)
+
+    fun muteAssist(host: String) {
+        if (host.isBlank()) return
+        val cur = p.getStringSet("assist_muted", emptySet()).orEmpty()
+        p.edit().putStringSet("assist_muted", cur + host).apply()
+    }
+
     // ---------- 工具 ----------
     fun toUrl(input: String): String {
         val t = input.trim()

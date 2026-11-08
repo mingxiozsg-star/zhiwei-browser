@@ -48,6 +48,9 @@ class MainActivity : ComponentActivity() {
     private var screen by mutableStateOf("splash") // splash/onboarding/browser/settings/bookmarks/history
     private var navDir by androidx.compose.runtime.mutableIntStateOf(1) // 1=前进 -1=返回
     private var aiOpen by mutableStateOf(false)
+    /** AI 面板打开时落到哪个页签（0 总结 / 1 翻译 / 2 对话）与预填问题 */
+    private var aiTab by androidx.compose.runtime.mutableIntStateOf(0)
+    private var aiPrefill by mutableStateOf<String?>(null)
 
     /** 内置查看器目标：非 null 时以覆盖层呈现，不打断浏览器状态 */
     private var viewerTarget by mutableStateOf<FileTarget?>(null)
@@ -164,8 +167,9 @@ class MainActivity : ComponentActivity() {
                                 onOpenSettings = { navDir = 1; screen = "settings" },
                                 onOpenBookmarks = { navDir = 1; screen = "bookmarks" },
                                 onOpenHistory = { navDir = 1; screen = "history" },
-                                onOpenAi = { aiOpen = true },
+                                onOpenAi = { aiTab = 0; aiPrefill = null; aiOpen = true },
                                 onOpenDownloads = { navDir = 1; screen = "downloads" },
+                                onAskAi = { q -> aiTab = 2; aiPrefill = q; aiOpen = true },
                             )
                             // padding 交给边到边布局
                             @Suppress("UNUSED_EXPRESSION") padding
@@ -173,8 +177,21 @@ class MainActivity : ComponentActivity() {
                         if (aiOpen) {
                             AiSheet(
                                 vm = vm,
-                                onDismiss = { aiOpen = false },
+                                initialTab = aiTab,
+                                prefill = aiPrefill,
+                                onDismiss = { aiOpen = false; aiPrefill = null },
                                 onOpenSettings = { aiOpen = false; navDir = 1; screen = "settings" }
+                            )
+                        }
+                        // 网页提示（英文页翻译 / 长文总结）：读屏开启时自动改用系统确认框
+                        vm.pageCue?.let { cue ->
+                            val sr = com.java.myapplication.ui.A11y.screenReaderOn(this@MainActivity)
+                            com.java.myapplication.ui.PageCueHost(
+                                cue = cue,
+                                screenReader = sr,
+                                onConfirm = { vm.acceptCue(cue) { aiTab = 0; aiPrefill = null; aiOpen = true } },
+                                onMute = { vm.muteCue(cue) },
+                                onDismiss = { vm.dismissCue() }
                             )
                         }
                         var lastBackAt by remember { mutableStateOf(0L) }

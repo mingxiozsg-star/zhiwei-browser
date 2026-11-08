@@ -703,6 +703,8 @@ private fun LanguagePage() {
         listOf("zh-CN" to "简体中文", "zh-TW" to "繁體中文", "en" to "English", "ja" to "日本語", "ko" to "한국어", "fr" to "Français", "de" to "Deutsch", "ru" to "Русский", "es" to "Español")
     ) { Settings.translateTarget = it }
     SwitchSetting("自动翻译英文页面", Settings.autoTranslate) { Settings.autoTranslate = it }
+    SwitchSetting("翻译前先询问（推荐）", Settings.autoTranslateAsk) { Settings.autoTranslateAsk = it }
+    SwitchSetting("网页助手主动提示（英文页 / 长文页）", Settings.assistPrompt) { Settings.assistPrompt = it }
 }
 
 @Composable

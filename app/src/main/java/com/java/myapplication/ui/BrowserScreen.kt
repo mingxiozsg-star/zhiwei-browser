@@ -85,6 +85,7 @@ fun BrowserScreen(
     onOpenHistory: () -> Unit,
     onOpenAi: () -> Unit,
     onOpenDownloads: () -> Unit,
+    onAskAi: (String) -> Unit,
 ) {
     val context = LocalContext.current
     val tab = vm.current
@@ -228,7 +229,7 @@ fun BrowserScreen(
             onAction = { action ->
                 menuOpen = false
                 handleMenuAction(action, vm, tab, context,
-                    onOpenSettings, onOpenBookmarks, onOpenHistory, onOpenAi, onOpenDownloads) { findBar = true }
+                    onOpenSettings, onOpenBookmarks, onOpenHistory, onOpenAi, onOpenDownloads, onAskAi) { findBar = true }
             }
         )
     }
@@ -239,7 +240,7 @@ fun BrowserScreen(
 
 private enum class MenuAction {
     HOME, NEW_TAB, BOOKMARK, BOOKMARKS, HISTORY, ADD_SHORTCUT,
-    FIND, TRANSLATE, DESKTOP, SHARE, COPY_LINK, AI, SETTINGS, DOWNLOADS
+    FIND, TRANSLATE, DESKTOP, SHARE, COPY_LINK, AI, ASK_SELECTION, SETTINGS, DOWNLOADS
 }
 
 /** 底部弹出菜单面板：时间日期头 + 图标宫格 */
@@ -289,6 +290,7 @@ private fun MenuSheet(
                 add(Triple(Icons.Filled.List, "复制链接", MenuAction.COPY_LINK))
                 add(Triple(Icons.Filled.Search, "页内查找", MenuAction.FIND))
                 add(Triple(Icons.Filled.Refresh, "翻译本页", MenuAction.TRANSLATE))
+                add(Triple(Icons.Filled.Search, "选中问 AI", MenuAction.ASK_SELECTION))
                 add(Triple(
                     if (Settings.desktopMode) Icons.Filled.Home else Icons.Filled.Home,
                     if (Settings.desktopMode) "手机模式" else "桌面模式", MenuAction.DESKTOP))
@@ -342,6 +344,7 @@ private fun handleMenuAction(
     onOpenHistory: () -> Unit,
     onOpenAi: () -> Unit,
     onOpenDownloads: () -> Unit,
+    onAskAi: (String) -> Unit,
     onFind: () -> Unit,
 ) {
     when (action) {
@@ -371,6 +374,15 @@ private fun handleMenuAction(
             android.widget.Toast.makeText(context, "链接已复制", android.widget.Toast.LENGTH_SHORT).show()
         }
         MenuAction.AI -> onOpenAi()
+        MenuAction.ASK_SELECTION -> tab?.let { t ->
+            vm.selectedText(t) { sel ->
+                if (sel.isBlank()) {
+                    android.widget.Toast.makeText(context, "先长按选中一段文字", android.widget.Toast.LENGTH_SHORT).show()
+                } else {
+                    onAskAi("这是什么？\n\n【选中的文字】\n" + sel.take(1500))
+                }
+            }
+        }
         MenuAction.SETTINGS -> onOpenSettings()
     }
 }

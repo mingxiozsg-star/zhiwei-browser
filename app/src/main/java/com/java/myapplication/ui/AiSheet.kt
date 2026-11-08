@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -50,8 +51,14 @@ private data class ChatMsg(val role: String, val content: String)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun AiSheet(vm: BrowserViewModel, onDismiss: () -> Unit, onOpenSettings: () -> Unit) {
-    var selectedTab by remember { mutableIntStateOf(0) }
+fun AiSheet(
+    vm: BrowserViewModel,
+    onDismiss: () -> Unit,
+    onOpenSettings: () -> Unit,
+    initialTab: Int = 0,
+    prefill: String? = null,
+) {
+    var selectedTab by remember { mutableIntStateOf(initialTab) }
     val tabTitles = listOf("总结", "翻译", "对话")
 
     ModalBottomSheet(onDismissRequest = onDismiss) {
@@ -65,7 +72,7 @@ fun AiSheet(vm: BrowserViewModel, onDismiss: () -> Unit, onOpenSettings: () -> U
             when (selectedTab) {
                 0 -> SummaryPane(vm, onOpenSettings)
                 1 -> TranslatePane(vm)
-                2 -> ChatPane(vm, onOpenSettings)
+                2 -> ChatPane(vm, onOpenSettings, prefill)
             }
             Spacer(Modifier.height(24.dp))
         }
@@ -109,7 +116,7 @@ private fun SummaryPane(vm: BrowserViewModel, onOpenSettings: () -> Unit) {
         if (result.isNotEmpty()) {
             Spacer(Modifier.height(12.dp))
             Column(Modifier.heightIn(max = 380.dp).verticalScroll(rememberScrollState())) {
-                Text(result, style = MaterialTheme.typography.bodyMedium)
+                Text(result, modifier = Modifier.a11yLive(), style = MaterialTheme.typography.bodyMedium)
             }
         }
     }
@@ -189,7 +196,7 @@ private fun TranslatePane(vm: BrowserViewModel) {
         if (result.isNotEmpty()) {
             Spacer(Modifier.height(12.dp))
             Column(Modifier.heightIn(max = 300.dp).verticalScroll(rememberScrollState())) {
-                Text(result, style = MaterialTheme.typography.bodyMedium)
+                Text(result, modifier = Modifier.a11yLive(), style = MaterialTheme.typography.bodyMedium)
             }
         }
     }
@@ -198,9 +205,9 @@ private fun TranslatePane(vm: BrowserViewModel) {
 private data class Attachment(val name: String, val mime: String, val text: String?, val imageBytes: ByteArray?)
 
 @Composable
-private fun ChatPane(vm: BrowserViewModel, onOpenSettings: () -> Unit) {
+private fun ChatPane(vm: BrowserViewModel, onOpenSettings: () -> Unit, prefill: String? = null) {
     var messages by remember { mutableStateOf(listOf<ChatMsg>()) }
-    var input by remember { mutableStateOf("") }
+    var input by remember { mutableStateOf(prefill.orEmpty()) }
     var loading by remember { mutableStateOf(false) }
     var usePage by remember { mutableStateOf(true) }
     var attachment by remember { mutableStateOf<Attachment?>(null) }
@@ -265,6 +272,19 @@ private fun ChatPane(vm: BrowserViewModel, onOpenSettings: () -> Unit) {
             TextButton(onClick = { usePage = !usePage }) {
                 Text(if (usePage) "✓ 携带当前页面上下文" else "不携带页面上下文",
                     style = MaterialTheme.typography.labelSmall)
+            }
+        }
+        // 常用问法：一键填入，「这是什么 / 这篇讲什么」不用手打
+        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
+            listOf(
+                "这是什么？",
+                "这篇页面在讲什么？",
+                "总结一下要点",
+                "把这段翻译成中文"
+            ).forEach { q ->
+                TextButton(onClick = { input = q }) {
+                    Text(q, style = MaterialTheme.typography.labelSmall)
+                }
             }
         }
         if (Settings.aiKey.isBlank()) {

@@ -42,8 +42,18 @@ Release build is just **1.5 MB** — no ad SDK, no analytics, no background serv
 - **Attachments** — 📎 images (multimodal vision) and text documents sent along with the question
 - **多厂商接入** —— 内置 7 家预设（DeepSeek / OpenAI / Kimi / 智谱 / 通义 / 中转站 / 自定义），一键切换自动填充 API Base 与默认模型，**API Key 完全由用户自持**
 - **Multiple providers** — 7 built-in presets (DeepSeek / OpenAI / Kimi / Zhipu / Qwen / relay / custom); switching fills in the API base and default model, and **the API key stays in your hands**
-- **身份锁定** —— 提示词级身份固化，AI 始终以「知微」身份应答
-- **Locked identity** — the prompt pins the persona, so the AI always answers as "Zhiwei"
+- **身份锁定 + 模型可查** —— 提示词级身份固化，AI 始终以「知微」身份应答；被问到模型时如实回答当前模型，不编造其他身份
+- **Locked identity, open model** — the prompt pins the persona "Zhiwei"; when asked which model is running it answers honestly instead of making things up
+- **网页操作（工具调用）** —— AI 能直接读页面、打开网址、点按钮、填搜索框、滚动、返回，按用户意图自己动手，每次操作都能在对话里看到痕迹
+- **Web actions (tool calling)** — the AI can read pages, open URLs, click buttons, fill inputs, scroll and go back on its own, and every action shows up in the chat
+- **帮你下载应用** —— 找到下载入口后直接把文件（含 APK 安装包）加入下载队列，自动挂加速线路
+- **Download on request** —— once it finds the download link, files (APKs included) go straight into the download queue with mirror acceleration
+- **网页助手提示** —— 英文页先问要不要翻译、长文页问要不要总结，支持按站点免打扰
+- **Assist prompts** — English pages ask before translating, long pages offer a summary, with per-site mute
+- **模型可见** —— AI 面板直接显示当前所用模型
+- **Model shown** — the AI panel displays the model currently in use
+- **无障碍支持** —— 打开读屏后弹窗改用系统确认框、结果自动朗读、触控区不小于 48dp
+- **Accessibility** — with a screen reader on, prompts use system dialogs, results are announced aloud, touch targets stay at least 48dp
 
 ### 🎨 交互细节 · Interaction Details
 

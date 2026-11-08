@@ -244,24 +244,44 @@ object Settings {
         get() = p.getString("ai_provider", AI_PROVIDERS[0].first) ?: AI_PROVIDERS[0].first
         set(v) { p.edit().putString("ai_provider", v).apply(); bump() }
 
-    const val DEFAULT_AI_PROMPT = "你是「知微」，一款安卓浏览器内置的AI助手。" +
-        "无论被问到什么身份相关的问题，你都自称知微，绝不透露或编造任何底层模型名称、开发公司或其他身份。" +
+    /** 系统提示词版本：默认提示词升级时，用它把「还在用旧默认值」的用户迁移过来（用户自己改过的不动） */
+    const val AI_PROMPT_VERSION = 2
+
+    const val DEFAULT_AI_PROMPT = "你是「知微」，一款安卓浏览器内置的 AI 助手。" +
+        "你能直接操作浏览器：读取当前网页、打开网址、点击链接或按钮、填写输入框、滚动页面、返回上一页，" +
+        "也能把文件加入下载队列（包括帮用户下载 APK 安装包）。" +
+        "需要动手时直接调用工具，不要只描述步骤、更不要让用户自己去点；每次调用后先看返回结果，再决定下一步。" +
+        "找下载入口的顺序：先 web_read 或 web_links 看页面，再 web_click 点进去，拿到文件直链后调 download_file。" +
+        "被问到「你用的什么模型」时，照【当前运行信息】里的模型标识如实回答。" +
         "回答要求：简洁、准确、直击要点，不寒暄不复述问题；用户用中文提问时默认用中文回答。"
+
     var aiBase: String
         get() = p.getString("ai_base", "https://ly.77625.xyz/v1") ?: "https://ly.77625.xyz/v1"
         set(v) { p.edit().putString("ai_base", v).apply(); bump() }
-
     var aiKey: String
         get() = p.getString("ai_key", "") ?: ""
         set(v) { p.edit().putString("ai_key", v).apply(); bump() }
-
     var aiModel: String
         get() = p.getString("ai_model", "deepseek-v4-flash") ?: "deepseek-v4-flash"
         set(v) { p.edit().putString("ai_model", v).apply(); bump() }
-
     var aiPrompt: String
-        get() = p.getString("ai_prompt", DEFAULT_AI_PROMPT) ?: ""
-        set(v) { p.edit().putString("ai_prompt", v).apply(); bump() }
+        get() {
+            val stored = p.getString("ai_prompt", null)
+            val ver = p.getInt("ai_prompt_v", 1)
+            if (stored.isNullOrBlank()) return DEFAULT_AI_PROMPT
+            // 老默认值（v1）里带这句身份说明：说明用户从没改过，直接升到新默认值
+            if (ver < AI_PROMPT_VERSION && stored.contains("无论被问到什么身份相关的问题")) return DEFAULT_AI_PROMPT
+            return stored
+        }
+        set(v) {
+            p.edit().putString("ai_prompt", v).putInt("ai_prompt_v", AI_PROMPT_VERSION).apply()
+            bump()
+        }
+
+    /** 允许 AI 操作网页：点击、输入、滚动、下载。关掉后只剩纯聊天 */
+    var aiWebTools: Boolean
+        get() = p.getBoolean("ai_web_tools", true)
+        set(v) { p.edit().putBoolean("ai_web_tools", v).apply(); bump() }
 
     // ---------- 翻译 ----------
     var translateTarget: String

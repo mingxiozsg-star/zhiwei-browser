@@ -719,6 +719,7 @@ private fun AiControlPage() {
         SwitchSetting("链接预览摘要", Settings.aiLinkPreview) { Settings.aiLinkPreview = it }
         SwitchSetting("标签页分组建议", Settings.aiTabGroup) { Settings.aiTabGroup = it }
         SwitchSetting("PDF 图像替代文本", Settings.aiPdfAlt) { Settings.aiPdfAlt = it }
+        SwitchSetting("允许 AI 操作网页（点击 / 输入 / 滚动 / 下载应用）", Settings.aiWebTools) { Settings.aiWebTools = it }
         Text("AI 不绑定单一提供商，下方可自由切换或自建中转。处理页面内容时，数据将发送至所选提供商。",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,

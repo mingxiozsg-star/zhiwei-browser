@@ -36,7 +36,11 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.webkit.WebSettingsCompat
 import androidx.webkit.WebViewFeature
+import com.java.myapplication.ai.AiTools
+import kotlinx.coroutines.suspendCancellableCoroutine
+import org.json.JSONObject
 import java.io.ByteArrayInputStream
+import kotlin.coroutines.resume
 
 class Tab(val id: Long) {
     var webView: WebView? = null
@@ -693,5 +697,248 @@ class BrowserViewModel : ViewModel() {
         context.cacheDir.deleteRecursively()
         tabs.forEach { it.webView?.clearCache(true) }
         Store.clearHistory()
+    }
+
+    // ==================== AI 网页操作工具 ====================
+
+    /** 在 tab 上跑一段 JS 并取回字符串结果 */
+    private suspend fun evalJs(tab: Tab, js: String): String = suspendCancellableCoroutine { cont ->
+        val wv = tab.webView
+        if (wv == null) {
+            cont.resume("")
+            return@suspendCancellableCoroutine
+        }
+        wv.evaluateJavascript(js) { raw -> if (cont.isActive) cont.resume(unescapeJs(raw ?: "")) }
+    }
+
+    /** 等这一页加载完（最多 waitMs），再留一点渲染时间，否则点不到刚出现的元素 */
+    private suspend fun awaitPage(tab: Tab, waitMs: Long = 8000) {
+        var waited = 0L
+        while (tab.isLoading && waited < waitMs) {
+            kotlinx.coroutines.delay(200)
+            waited += 200
+        }
+        kotlinx.coroutines.delay(300)
+    }
+
+    /**
+     * AI 工具执行入口。每个分支都返回一句人能看懂的结论，模型据此决定下一步。
+     * 工具的名字与参数定义见 ai/AiTools.kt。
+     */
+    suspend fun aiTool(name: String, args: JSONObject): String {
+        val tab = current ?: return "没有可操作的标签页"
+        return when (name) {
+            AiTools.WEB_READ -> {
+                awaitPage(tab, 3000)
+                val js = """
+                    (function(){
+                      try{
+                        var c = document.body ? document.body.cloneNode(true) : null;
+                        if(!c) return JSON.stringify({title:document.title,url:location.href,text:''});
+                        c.querySelectorAll('script,style,noscript,iframe,nav,header,footer').forEach(function(e){e.remove();});
+                        var t = (c.innerText||'').replace(/\n{3,}/g,'\n\n').trim();
+                        return JSON.stringify({title:document.title,url:location.href,text:t.slice(0,6000)});
+                      }catch(e){ return JSON.stringify({title:'',url:'',text:'读取失败:'+e.message}); }
+                    })();
+                """.trimIndent()
+                val o = runCatching { JSONObject(evalJs(tab, js)) }.getOrNull()
+                    ?: return "读取网页失败（页面可能还没加载完）"
+                val text = o.optString("text")
+                if (text.isBlank()) return "页面标题：${o.optString("title")}\n网址：${o.optString("url")}\n正文为空。"
+                "标题：${o.optString("title")}\n网址：${o.optString("url")}\n正文（${text.length} 字）：\n${text.take(4000)}"
+            }
+
+            AiTools.WEB_LINKS -> {
+                awaitPage(tab, 3000)
+                val limit = args.optInt("limit", 40).coerceIn(5, 80)
+                val js = """
+                    (function(){
+                      var out=[];
+                      var els=document.querySelectorAll('a[href],button,input[type=submit],[role=button]');
+                      for(var i=0;i<els.length && out.length<$limit;i++){
+                        var e=els[i];
+                        var r=e.getBoundingClientRect?e.getBoundingClientRect():{width:9,height:9};
+                        if(r.width<2||r.height<2) continue;
+                        var t=(e.innerText||e.value||e.getAttribute('aria-label')||'').replace(/\s+/g,' ').trim().slice(0,60);
+                        if(!t) continue;
+                        out.push((e.getAttribute('href')||'')+' || '+t);
+                      }
+                      return JSON.stringify(out);
+                    })();
+                """.trimIndent()
+                val arr = runCatching { org.json.JSONArray(evalJs(tab, js)) }.getOrNull()
+                if (arr == null || arr.length() == 0) "这一页没找到可点击的链接或按钮。"
+                else buildString {
+                    append("网址：").append(tab.url).append("\n可点击项：\n")
+                    for (i in 0 until arr.length()) append(i + 1).append(". ").append(arr.optString(i)).append("\n")
+                }
+            }
+
+            AiTools.WEB_OPEN -> {
+                var u = args.optString("url").trim()
+                if (!u.startsWith("http")) {
+                    if (u.contains(".") && !u.contains(" ")) u = "https://$u" else return "网址不合法：$u"
+                }
+                val wv = tab.webView ?: return "浏览器还没准备好"
+                if (args.optBoolean("new_tab", false)) {
+                    val t = addTab(wv.context, u)
+                    awaitPage(t, 10000)
+                    "已在新标签页打开：${t.url}（${t.title}）"
+                } else {
+                    tab.url = u
+                    wv.loadUrl(u)
+                    awaitPage(tab, 10000)
+                    "已打开：${tab.url}（${tab.title}）"
+                }
+            }
+
+            AiTools.WEB_CLICK -> {
+                val target = args.optString("target").trim()
+                if (target.isBlank()) return "缺少 target：请给出要点击的文字或 CSS 选择器"
+                awaitPage(tab, 3000)
+                val js = """
+                    (function(){
+                      var tg=__TARGET__;
+                      function vis(e){var r=e.getBoundingClientRect();return r.width>1&&r.height>1;}
+                      var el=null;
+                      try{ var q=document.querySelector(tg); if(q&&vis(q)) el=q; }catch(e){}
+                      if(!el){
+                        var c=document.querySelectorAll('a,button,[role=button],input[type=submit],input[type=button],summary,label');
+                        var best=null,bl=0;
+                        for(var i=0;i<c.length;i++){
+                          var e=c[i]; if(!vis(e)) continue;
+                          var t=((e.innerText||e.value||'')+'').replace(/\s+/g,' ').trim();
+                          if(!t) continue;
+                          if(t===tg){ el=e; break; }
+                          if(t.indexOf(tg)>=0 && (best===null || t.length<bl)){ best=e; bl=t.length; }
+                        }
+                        el=el||best;
+                      }
+                      if(!el) return 'NOTFOUND';
+                      try{ el.scrollIntoView({block:'center'}); }catch(e){}
+                      try{ el.click(); }catch(e){ return 'FAIL:'+e.message; }
+                      var t=((el.innerText||el.value||'')+'').replace(/\s+/g,' ').trim().slice(0,40);
+                      return 'OK:'+t+'|'+(el.getAttribute&&el.getAttribute('href')||'');
+                    })();
+                """.trimIndent().replace("__TARGET__", JSONObject.quote(target))
+                val res = evalJs(tab, js)
+                when {
+                    res == "NOTFOUND" -> "没找到「$target」。可以先调 web_links 看看这一页有什么可点的。"
+                    res.startsWith("FAIL:") -> "点击失败：${res.removePrefix("FAIL:")}"
+                    else -> {
+                        val label = res.removePrefix("OK:").substringBefore('|')
+                        val href = res.substringAfter('|', "")
+                        awaitPage(tab, 6000)
+                        val jump = if (href.startsWith("http") || href.startsWith("/")) "，指向 $href" else ""
+                        "已点击「$label」$jump。当前页：${tab.url}"
+                    }
+                }
+            }
+
+            AiTools.WEB_TYPE -> {
+                val value = args.optString("text")
+                if (value.isEmpty()) return "要填写的内容为空"
+                val target = args.optString("target").trim()
+                val submit = args.optBoolean("submit", false)
+                awaitPage(tab, 3000)
+                val js = """
+                    (function(){
+                      var tg=__TARGET__, val=__VALUE__, doSubmit=__SUBMIT__;
+                      function vis(e){var r=e.getBoundingClientRect();return r.width>1&&r.height>1;}
+                      function pick(sel){
+                        var list=document.querySelectorAll('input:not([type=hidden]),textarea,[contenteditable=true]');
+                        for(var i=0;i<list.length;i++){
+                          var e=list[i]; if(!vis(e)) continue;
+                          var hay=((e.getAttribute('placeholder')||'')+' '+(e.getAttribute('name')||'')+' '+(e.id||'')+' '+(e.getAttribute('aria-label')||''));
+                          if(!sel || hay.indexOf(sel)>=0) return e;
+                        }
+                        return null;
+                      }
+                      var el=null;
+                      if(tg){ try{ var q=document.querySelector(tg); if(q&&vis(q)) el=q; }catch(e){} }
+                      if(!el) el=pick(tg);
+                      if(!el) return 'NOTFOUND';
+                      try{ el.focus(); }catch(e){}
+                      if(el.isContentEditable){ el.textContent=val; } else { el.value=val; }
+                      el.dispatchEvent(new Event('input',{bubbles:true}));
+                      el.dispatchEvent(new Event('change',{bubbles:true}));
+                      if(doSubmit){
+                        try{
+                          var f=el.form;
+                          if(f && f.requestSubmit) f.requestSubmit();
+                          else if(f) f.submit();
+                          else el.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',keyCode:13,which:13,bubbles:true}));
+                        }catch(e){}
+                      }
+                      return 'OK';
+                    })();
+                """.trimIndent()
+                    .replace("__TARGET__", JSONObject.quote(target))
+                    .replace("__VALUE__", JSONObject.quote(value))
+                    .replace("__SUBMIT__", if (submit) "true" else "false")
+                if (evalJs(tab, js) == "NOTFOUND") "没找到输入框。可以先调 web_links 或 web_read 看看这一页的结构。"
+                else {
+                    awaitPage(tab, 6000)
+                    "已填入「$value」${if (submit) "并提交" else ""}。当前页：${tab.url}"
+                }
+            }
+
+            AiTools.WEB_SCROLL -> {
+                val up = args.optString("direction", "down").lowercase() == "up"
+                val amount = args.optInt("amount", 0)
+                val js = """
+                    (function(){
+                      var a=__AMT__; if(!a) a=Math.round(window.innerHeight*0.8);
+                      window.scrollBy(0, __SIGN__(a));
+                      return JSON.stringify({y:Math.round(window.scrollY),h:document.body?document.body.scrollHeight:0});
+                    })();
+                """.trimIndent()
+                    .replace("__AMT__", amount.toString())
+                    .replace("__SIGN__", if (up) "-" else "")
+                val o = runCatching { JSONObject(evalJs(tab, js)) }.getOrNull()
+                if (o == null) "滚动失败" else "已滚动，当前位置 ${o.optInt("y")} / 页面高 ${o.optInt("h")}"
+            }
+
+            AiTools.WEB_BACK -> {
+                val wv = tab.webView ?: return "浏览器还没准备好"
+                if (!wv.canGoBack()) "没有上一页可以返回。"
+                else {
+                    wv.goBack()
+                    awaitPage(tab, 6000)
+                    "已返回：${tab.url}"
+                }
+            }
+
+            AiTools.DOWNLOAD -> {
+                var u = args.optString("url").trim()
+                if (u.startsWith("//")) u = "https:$u"
+                if (!u.startsWith("http")) {
+                    return "下载失败：需要文件的 http/https 直链（收到的是「$u」）。如果这是页面上的按钮，先调 web_click 点它。"
+                }
+                val ctx = tab.webView?.context ?: return "下载失败：浏览器上下文不可用"
+                val nm = args.optString("name").trim().ifBlank { null }
+                val t = Downloader.enqueue(
+                    context = ctx,
+                    url = u,
+                    nameHint = nm,
+                    ua = tab.webView?.settings?.userAgentString,
+                    mime = null,
+                    contentDisposition = null,
+                    referer = tab.url,
+                    mirrors = UpdateChecker.mirrorUrls(u).filter { it != u }
+                )
+                "已加入下载队列：${t.name}（可选线路 ${t.lineCount} 条）。用户可以在「下载」页看进度。"
+            }
+
+            AiTools.TABS -> buildString {
+                append("共 ${tabs.size} 个标签页：\n")
+                tabs.forEachIndexed { i, t ->
+                    append(if (i == currentIndex) "* " else "  ").append(i + 1).append(". ")
+                        .append(t.title.ifBlank { t.url }).append(" — ").append(t.url).append("\n")
+                }
+            }
+
+            else -> "未知工具：$name"
+        }
     }
 }

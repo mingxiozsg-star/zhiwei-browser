@@ -268,9 +268,21 @@ private fun ChatPane(vm: BrowserViewModel, onOpenSettings: () -> Unit, prefill: 
     Column {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("AI 对话", style = MaterialTheme.typography.titleSmall)
-            Spacer(Modifier.width(12.dp))
+            Spacer(Modifier.width(8.dp))
+            Text(
+                "模型：${Settings.aiModel.ifBlank { "未配置" }}",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1
+            )
+        }
+        Row(verticalAlignment = Alignment.CenterVertically) {
             TextButton(onClick = { usePage = !usePage }) {
                 Text(if (usePage) "✓ 携带当前页面上下文" else "不携带页面上下文",
+                    style = MaterialTheme.typography.labelSmall)
+            }
+            TextButton(onClick = { Settings.aiWebTools = !Settings.aiWebTools }) {
+                Text(if (Settings.aiWebTools) "✓ 可操作网页" else "仅聊天",
                     style = MaterialTheme.typography.labelSmall)
             }
         }
@@ -298,18 +310,28 @@ private fun ChatPane(vm: BrowserViewModel, onOpenSettings: () -> Unit, prefill: 
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             items(messages) { m ->
-                val isUser = m.role == "user"
-                Row(
-                    Modifier.fillMaxWidth(),
-                    horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start
-                ) {
-                    Surface(
-                        color = if (isUser) MaterialTheme.colorScheme.primaryContainer
-                        else MaterialTheme.colorScheme.surfaceVariant,
-                        shape = RoundedCornerShape(12.dp),
-                        modifier = Modifier.widthIn(max = 300.dp)
+                if (m.role == "step") {
+                    // 工具执行痕迹：让用户看得见 AI 正在动网页
+                    Text(
+                        "🛠 ${m.content}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(start = 4.dp)
+                    )
+                } else {
+                    val isUser = m.role == "user"
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start
                     ) {
-                        Text(m.content, Modifier.padding(10.dp), style = MaterialTheme.typography.bodyMedium)
+                        Surface(
+                            color = if (isUser) MaterialTheme.colorScheme.primaryContainer
+                            else MaterialTheme.colorScheme.surfaceVariant,
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.widthIn(max = 300.dp)
+                        ) {
+                            Text(m.content, Modifier.padding(10.dp), style = MaterialTheme.typography.bodyMedium)
+                        }
                     }
                 }
             }
@@ -387,24 +409,39 @@ private fun ChatPane(vm: BrowserViewModel, onOpenSettings: () -> Unit, prefill: 
                     loading = true
                     scope.launch {
                         val answer = try {
-                            when {
-                                att?.imageBytes != null -> AiClient.chatWithImage(q, att.imageBytes, att.mime)
-                                else -> {
-                                    val qFull = if (att?.text != null)
-                                        "【附件 ${att.name} 内容】\n${att.text}\n\n【问题】\n$q" else q
-                                    val tab = vm.current
-                                    if (usePage && tab != null && att == null) {
-                                        var pageText = ""
-                                        var done = false
-                                        vm.extractPageText(tab) { t -> pageText = t; done = true }
-                                        var wait = 0
-                                        while (!done && wait < 50) { kotlinx.coroutines.delay(100); wait++ }
-                                        if (pageText.length > 100) AiClient.askAboutPage(qFull, pageText, tab.title)
-                                        else AiClient.chat(listOf(AiClient.Msg("system", Settings.aiPrompt), AiClient.Msg("user", qFull)))
-                                    } else {
-                                        AiClient.chat(listOf(AiClient.Msg("system", Settings.aiPrompt), AiClient.Msg("user", qFull)))
+                            if (att?.imageBytes != null) {
+                                AiClient.chatWithImage(q, att.imageBytes, att.mime)
+                            } else {
+                                val qFull = if (att?.text != null)
+                                    "【附件 ${att.name} 内容】\n${att.text}\n\n【问题】\n$q" else q
+                                val tab = vm.current
+                                var asked = qFull
+                                if (usePage && tab != null && att == null) {
+                                    var pageText = ""
+                                    var done = false
+                                    vm.extractPageText(tab) { t -> pageText = t; done = true }
+                                    var wait = 0
+                                    while (!done && wait < 50) { kotlinx.coroutines.delay(100); wait++ }
+                                    if (pageText.length > 100) {
+                                        asked = "【当前网页《${tab.title}》内容】\n${pageText.take(4000)}\n\n【问题】\n$qFull"
                                     }
                                 }
+                                // 历史对话（跳过工具痕迹）一起带上，保持多轮连贯
+                                val history = messages
+                                    .filter { it.role == "user" || it.role == "assistant" }
+                                    .takeLast(8)
+                                    .map { AiClient.Msg(it.role, it.content) }
+                                val req = listOf(AiClient.Msg("system", Settings.aiPrompt)) +
+                                    history + AiClient.Msg("user", asked)
+                                AiClient.chatAgent(
+                                    messages = req,
+                                    enableTools = Settings.aiWebTools,
+                                    onStep = { step ->
+                                        messages = messages + ChatMsg("step", step.summary)
+                                        listState.animateScrollToItem(messages.size - 1)
+                                    },
+                                    executor = { name, args -> vm.aiTool(name, args) }
+                                ).text
                             }
                         } catch (e: Exception) { "出错：${e.message}" }
                         messages = messages + ChatMsg("assistant", answer)

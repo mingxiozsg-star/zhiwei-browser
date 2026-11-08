@@ -5,7 +5,7 @@
 > A lightweight, clean Android browser built with a WebView core and Jetpack Compose, with a built-in AI assistant.
 
 [![Build Release APK](https://github.com/mingxiozsg-star/zhiwei-browser/actions/workflows/build-release.yml/badge.svg)](https://github.com/mingxiozsg-star/zhiwei-browser/actions/workflows/build-release.yml)
-[![Release](https://img.shields.io/badge/version-1.8.2-blue)](https://github.com/mingxiozsg-star/zhiwei-browser/releases)
+[![Release](https://img.shields.io/badge/version-1.8.3-blue)](https://github.com/mingxiozsg-star/zhiwei-browser/releases)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
 正式版仅 **1.5 MB**，无广告 SDK、无埋点、无后台服务。

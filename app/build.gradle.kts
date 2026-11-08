@@ -31,8 +31,8 @@ android {
         applicationId = "com.java.myapplication"
         minSdk = 24
         targetSdk = 35
-        versionCode = 13
-        versionName = "1.8.2"
+        versionCode = 14
+        versionName = "1.8.3"
         buildConfigField("String", "BUILD_TIME", "\"${SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(Date())}\"")
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"

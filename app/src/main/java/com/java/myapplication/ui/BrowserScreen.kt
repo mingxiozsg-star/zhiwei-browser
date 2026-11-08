@@ -86,6 +86,7 @@ fun BrowserScreen(
     onOpenAi: () -> Unit,
     onOpenDownloads: () -> Unit,
     onAskAi: (String) -> Unit,
+    onScan: () -> Unit,
 ) {
     val context = LocalContext.current
     val tab = vm.current
@@ -153,7 +154,8 @@ fun BrowserScreen(
                     wallpaper = wallpaper,
                     hasVideoBg = homeVideo.isNotBlank(),
                     onSearch = { q -> vm.homeNavigate(tab, q) },
-                    onOpenUrl = { url -> vm.homeNavigate(tab, url) }
+                    onOpenUrl = { url -> vm.homeNavigate(tab, url) },
+                    onScan = onScan
                 )
             } else {
                 key(tab.id) {
@@ -229,7 +231,7 @@ fun BrowserScreen(
             onAction = { action ->
                 menuOpen = false
                 handleMenuAction(action, vm, tab, context,
-                    onOpenSettings, onOpenBookmarks, onOpenHistory, onOpenAi, onOpenDownloads, onAskAi) { findBar = true }
+                    onOpenSettings, onOpenBookmarks, onOpenHistory, onOpenAi, onOpenDownloads, onAskAi, onScan) { findBar = true }
             }
         )
     }
@@ -240,7 +242,7 @@ fun BrowserScreen(
 
 private enum class MenuAction {
     HOME, NEW_TAB, BOOKMARK, BOOKMARKS, HISTORY, ADD_SHORTCUT,
-    FIND, TRANSLATE, DESKTOP, SHARE, COPY_LINK, AI, ASK_SELECTION, SETTINGS, DOWNLOADS
+    FIND, TRANSLATE, DESKTOP, SHARE, COPY_LINK, AI, ASK_SELECTION, SCAN, SETTINGS, DOWNLOADS
 }
 
 /** 底部弹出菜单面板：时间日期头 + 图标宫格 */
@@ -282,6 +284,7 @@ private fun MenuSheet(
             add(Triple(Icons.Filled.DateRange, "历史记录", MenuAction.HISTORY))
             add(Triple(Icons.Filled.List, "下载", MenuAction.DOWNLOADS))
             add(Triple(Icons.Filled.Settings, "设置", MenuAction.SETTINGS))
+            add(Triple(Icons.Filled.Search, "扫一扫", MenuAction.SCAN))
             if (tab != null && !tab.isHome) {
                 add(Triple(
                     if (Store.isBookmarked(tab.url)) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
@@ -345,6 +348,7 @@ private fun handleMenuAction(
     onOpenAi: () -> Unit,
     onOpenDownloads: () -> Unit,
     onAskAi: (String) -> Unit,
+    onScan: () -> Unit,
     onFind: () -> Unit,
 ) {
     when (action) {
@@ -384,6 +388,7 @@ private fun handleMenuAction(
             }
         }
         MenuAction.SETTINGS -> onOpenSettings()
+        MenuAction.SCAN -> onScan()
     }
 }
 

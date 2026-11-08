@@ -8,6 +8,13 @@ import org.json.JSONObject
 data class Bookmark(val title: String, val url: String, val time: Long = System.currentTimeMillis())
 data class HistoryItem(val title: String, val url: String, val time: Long = System.currentTimeMillis())
 data class Shortcut(val name: String, val url: String)
+/** 扫码历史：kind 存 ScanKind 名，便于还原分类与可用操作 */
+data class ScanRecord(
+    val text: String,
+    val format: String,
+    val kind: String,
+    val time: Long = System.currentTimeMillis()
+)
 data class DownloadItem(
     val name: String,
     val url: String,
@@ -25,6 +32,7 @@ object Store {
     val history = mutableStateListOf<HistoryItem>()
     val shortcuts = mutableStateListOf<Shortcut>()
     val downloads = mutableStateListOf<DownloadItem>()
+    val scans = mutableStateListOf<ScanRecord>()
 
     private val defaultShortcuts = listOf(
         Shortcut("必应", "https://www.bing.com"),
@@ -78,6 +86,17 @@ object Store {
                     o.optString("uri").takeIf { it.isNotBlank() && it != "null" },
                     o.optString("path").takeIf { it.isNotBlank() && it != "null" },
                     o.optString("mime").takeIf { it.isNotBlank() && it != "null" }
+                )
+            )
+        }
+        // 扫码记录
+        val sc = JSONArray(prefs().getString("scans", "[]") ?: "[]")
+        for (i in 0 until sc.length()) {
+            val o = sc.getJSONObject(i)
+            scans.add(
+                ScanRecord(
+                    o.optString("text"), o.optString("format"),
+                    o.optString("kind"), o.optLong("time")
                 )
             )
         }
@@ -163,6 +182,30 @@ object Store {
         val d = downloads[idx]
         downloads[idx] = d.copy(uri = uri ?: d.uri, path = path ?: d.path, mime = mime ?: d.mime)
         saveDownloads()
+    }
+
+    // ---------- 扫码记录 ----------
+    fun addScan(text: String, format: String, kind: String) {
+        if (text.isBlank()) return
+        scans.removeAll { it.text == text && it.kind == kind }
+        scans.add(0, ScanRecord(text, format, kind))
+        if (scans.size > 80) repeat(scans.size - 80) { scans.removeAt(scans.size - 1) }
+        saveScans()
+    }
+
+    fun removeScan(s: ScanRecord) { scans.remove(s); saveScans() }
+    fun clearScans() { scans.clear(); prefs().edit().putString("scans", "[]").apply() }
+
+    private fun saveScans() {
+        val arr = JSONArray()
+        scans.take(80).forEach {
+            arr.put(
+                JSONObject()
+                    .put("text", it.text).put("format", it.format)
+                    .put("kind", it.kind).put("time", it.time)
+            )
+        }
+        prefs().edit().putString("scans", arr.toString()).apply()
     }
 
     // ---------- 会话标签恢复 ----------

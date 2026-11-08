@@ -58,10 +58,12 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.viewinterop.AndroidView
+import com.java.myapplication.R
 import com.java.myapplication.Settings
 import com.java.myapplication.Shortcut
 import com.java.myapplication.Store
@@ -157,6 +159,7 @@ fun HomePage(
     hasVideoBg: Boolean = false,
     onSearch: (String) -> Unit,
     onOpenUrl: (String) -> Unit,
+    onScan: () -> Unit = {},
 ) {
     Settings.version.intValue // 订阅设置变更
     var query by remember { mutableStateOf("") }
@@ -252,6 +255,18 @@ fun HomePage(
                                 unfocusedIndicatorColor = Color.Transparent
                             )
                         )
+                        // 扫一扫（搜索框右侧，紧随输入区）
+                        IconButton(
+                            onClick = onScan,
+                            modifier = Modifier.size(48.dp).a11yLabel("扫一扫")
+                        ) {
+                            Icon(
+                                painter = painterResource(R.drawable.ic_scan),
+                                contentDescription = "扫一扫",
+                                tint = onBg.copy(alpha = 0.85f),
+                                modifier = Modifier.size(22.dp)
+                            )
+                        }
                         // 分隔线 + 搜索按钮
                         Box(
                             Modifier.width(1.dp).height(26.dp)

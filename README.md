@@ -31,6 +31,10 @@ Release build is just **1.5 MB** — no ad SDK, no analytics, no background serv
 - **Custom wallpaper** — use the system wallpaper or any gallery image, with a frosted search bar floating above it
 - **自动翻译** —— 通过 Google 翻译代理整页翻译（英→中），链接跳转持续生效
 - **Auto translate** — full-page translation through a Google Translate proxy, kept across in-page navigation
+- **扫一扫** —— 主页搜索框右侧一键扫码，支持二维码与 EAN/UPC 等条形码，也能从相册选图识别；网址直接打开，电话 / 邮件 / 位置交给系统，Wi-Fi、商品码、文本可复制或搜索
+- **QR / barcode scan** — one tap to the right of the home search bar; QR codes plus EAN/UPC barcodes, and images picked from the gallery. URLs open right away, phone / mail / location go to the system, and Wi-Fi configs, product codes and plain text can be copied or searched
+- **扫码历史** —— 最近扫过的码留在扫码页，随时复用
+- **Scan history** — recent scans stay on the scan page for quick reuse
 
 ### 🤖 AI 助手 · AI Assistant
 
@@ -137,8 +141,10 @@ Pushing to `main` builds the release APK automatically. Configure these reposito
 │   ├── BrowserViewModel.kt      # 多标签 / WebView 状态管理 / tabs and WebView state
 │   ├── BrowserSettings.kt       # 设置持久化 + AI 厂商预设 / settings and AI provider presets
 │   ├── ai/AiClient.kt           # AI 请求层（文本 / 多模态 / 身份锁定）/ AI request layer
-│   └── ui/                      # Compose 界面（浏览器 / 设置 / 书签 / AI 面板 / 引导页）
-│                                # Compose screens: browser, settings, bookmarks, AI panel, onboarding
+│   ├── ai/AiTools.kt            # AI 可调用的网页操作工具（读页 / 点击 / 输入 / 下载）/ web-action tools for the AI
+│   ├── Scan.kt                  # 扫一扫：格式清单 + 内容分类 + 相册图片解码 / scan formats, classification, gallery decoding
+│   └── ui/                      # Compose 界面（浏览器 / 设置 / 书签 / AI 面板 / 扫一扫 / 引导页）
+│                                # Compose screens: browser, settings, bookmarks, AI panel, scanner, onboarding
 ├── .github/workflows/           # CI：Release 自动构建 / automated release build
 └── tools/                       # ARM64 aapt2（本地 ARM64 环境构建用）/ aapt2 for local ARM64 builds
 ```

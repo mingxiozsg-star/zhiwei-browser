@@ -90,6 +90,7 @@ dependencies {
     implementation(libs.androidx.material3)
     implementation(libs.androidx.webkit)
 implementation(libs.androidx.material.icons)
+    implementation(libs.zxing.embedded)
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)

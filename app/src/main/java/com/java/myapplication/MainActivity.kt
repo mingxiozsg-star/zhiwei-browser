@@ -38,7 +38,10 @@ import com.java.myapplication.ui.FileTarget
 import com.java.myapplication.ui.FileViewerScreen
 import com.java.myapplication.ui.HistoryScreen
 import com.java.myapplication.ui.OnboardingScreen
+import com.java.myapplication.ui.ScanResultDialog
+import com.java.myapplication.ui.ScanScreen
 import com.java.myapplication.ui.SettingsScreen
+import com.java.myapplication.ui.openExternal
 import com.java.myapplication.ui.SplashScreen
 import com.java.myapplication.ui.theme.MyApplicationTheme
 
@@ -54,6 +57,10 @@ class MainActivity : ComponentActivity() {
 
     /** 内置查看器目标：非 null 时以覆盖层呈现，不打断浏览器状态 */
     private var viewerTarget by mutableStateOf<FileTarget?>(null)
+
+    /** 扫一扫：相机页是否打开 / 扫到非网址内容的待确认结果 */
+    private var scanOpen by mutableStateOf(false)
+    private var scanPending by mutableStateOf<ScanHit?>(null)
 
     private val fileChooserLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -170,6 +177,7 @@ class MainActivity : ComponentActivity() {
                                 onOpenAi = { aiTab = 0; aiPrefill = null; aiOpen = true },
                                 onOpenDownloads = { navDir = 1; screen = "downloads" },
                                 onAskAi = { q -> aiTab = 2; aiPrefill = q; aiOpen = true },
+                                onScan = { scanOpen = true },
                             )
                             // padding 交给边到边布局
                             @Suppress("UNUSED_EXPRESSION") padding
@@ -222,8 +230,43 @@ class MainActivity : ComponentActivity() {
                 viewerTarget?.let { t ->
                     FileViewerScreen(t) { viewerTarget = null }
                 }
+                // 扫一扫：相机取景覆盖层（识别成功即跳转或弹结果）
+                if (scanOpen) {
+                    BackHandler { scanOpen = false }
+                    ScanScreen(
+                        onHit = { hit ->
+                            scanOpen = false
+                            handleScan(hit)
+                        },
+                        onClose = { scanOpen = false }
+                    )
+                }
+                scanPending?.let { hit ->
+                    ScanResultDialog(
+                        hit = hit,
+                        onOpen = {
+                            openExternal(this@MainActivity, hit)
+                            scanPending = null
+                        },
+                        onSearch = {
+                            vm.openUrl(this@MainActivity, Settings.searchUrl(hit.text))
+                            scanPending = null
+                        },
+                        onDismiss = { scanPending = null }
+                    )
+                }
                 }
             }
+        }
+    }
+
+    /** 扫码命中：记入历史；网址直接进浏览器，其余走结果弹窗 */
+    private fun handleScan(hit: ScanHit) {
+        Store.addScan(hit.text, hit.format, hit.kind.name)
+        if (hit.kind == ScanKind.URL) {
+            vm.openUrl(this, Scan.asUrl(hit.text))
+        } else {
+            scanPending = hit
         }
     }
 

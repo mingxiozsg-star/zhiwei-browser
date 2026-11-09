@@ -35,6 +35,7 @@ import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
@@ -295,7 +296,7 @@ private fun MenuSheet(
                 add(Triple(Icons.Filled.Refresh, "翻译本页", MenuAction.TRANSLATE))
                 add(Triple(Icons.Filled.Search, "选中问 AI", MenuAction.ASK_SELECTION))
                 add(Triple(
-                    if (Settings.desktopMode) Icons.Filled.Home else Icons.Filled.Home,
+                    if (Settings.desktopMode) Icons.Filled.Phone else Icons.Filled.Home,
                     if (Settings.desktopMode) "手机模式" else "桌面模式", MenuAction.DESKTOP))
                 add(Triple(Icons.Filled.Add, "加到主页", MenuAction.ADD_SHORTCUT))
             }
@@ -360,7 +361,10 @@ private fun handleMenuAction(
         MenuAction.DOWNLOADS -> onOpenDownloads()
         MenuAction.ADD_SHORTCUT -> tab?.let { if (it.url.isNotBlank()) Store.addShortcut(it.title, it.url) }
         MenuAction.FIND -> onFind()
-        MenuAction.TRANSLATE -> tab?.webView?.loadUrl(Settings.pageTranslateUrl(tab.url))
+        MenuAction.TRANSLATE -> tab?.let { t ->
+            if (t.url.startsWith("http")) t.webView?.loadUrl(Settings.pageTranslateUrl(t.url))
+            else android.widget.Toast.makeText(context, "当前页面不支持翻译", android.widget.Toast.LENGTH_SHORT).show()
+        }
         MenuAction.DESKTOP -> {
             Settings.desktopMode = !Settings.desktopMode
             vm.refreshAllSettings()
@@ -443,23 +447,6 @@ private fun AddressPill(tab: Tab, modifier: Modifier, onNavigate: (String) -> Un
         textStyle = MaterialTheme.typography.bodySmall
     )
 }
-
-@Composable
-private fun AiButton(onClick: () -> Unit) {
-    Surface(
-        color = MaterialTheme.colorScheme.primaryContainer,
-        shape = CircleShape,
-        modifier = Modifier.clip(CircleShape).clickable(onClick = onClick)
-    ) {
-        Text(
-            "AI",
-            Modifier.padding(horizontal = 18.dp, vertical = 8.dp),
-            style = MaterialTheme.typography.titleSmall,
-            color = MaterialTheme.colorScheme.onPrimaryContainer
-        )
-    }
-}
-
 // ================= 其余组件 =================
 
 @Composable

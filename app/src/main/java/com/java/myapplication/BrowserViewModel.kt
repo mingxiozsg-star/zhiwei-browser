@@ -565,10 +565,17 @@ class BrowserViewModel : ViewModel() {
         }
 
         override fun onReceivedError(view: WebView, request: WebResourceRequest, error: android.webkit.WebResourceError) {
-            if (request.isForMainFrame) {
-                tab.loadError = true
-                tab.isLoading = false
+            if (!request.isForMainFrame) return
+            // 自定义 scheme（weixin:// alipays:// intent:// 等）与被动取消并不是真的「页面打不开」，
+            // 之前会把正常网页整个盖成「加载失败」，这里放行，只有真正的加载错误才弹错误页
+            when (error.errorCode) {
+                WebViewClient.ERROR_UNSUPPORTED_SCHEME,
+                WebViewClient.ERROR_UNKNOWN_URL_SCHEME,
+                WebViewClient.ERROR_CANCELED,
+                WebViewClient.ERROR_REDIRECT_LOOP -> return
             }
+            tab.loadError = true
+            tab.isLoading = false
         }
 
         @Deprecated("Deprecated in Java")
@@ -651,14 +658,18 @@ class BrowserViewModel : ViewModel() {
         }
 
         override fun onJsAlert(view: WebView, url: String, message: String, result: JsResult): Boolean {
-            AlertDialog.Builder(view.context).setMessage(message)
+            val act = dialogContext(view.context)
+            if (act == null) { result.confirm(); return true }
+            AlertDialog.Builder(act).setMessage(message)
                 .setPositiveButton("确定") { _, _ -> result.confirm() }
                 .setOnCancelListener { result.cancel() }.show()
             return true
         }
 
         override fun onJsConfirm(view: WebView, url: String, message: String, result: JsResult): Boolean {
-            AlertDialog.Builder(view.context).setMessage(message)
+            val act = dialogContext(view.context)
+            if (act == null) { result.cancel(); return true }
+            AlertDialog.Builder(act).setMessage(message)
                 .setPositiveButton("确定") { _, _ -> result.confirm() }
                 .setNegativeButton("取消") { _, _ -> result.cancel() }
                 .setOnCancelListener { result.cancel() }.show()
@@ -666,8 +677,10 @@ class BrowserViewModel : ViewModel() {
         }
 
         override fun onJsPrompt(view: WebView, url: String, message: String, defaultValue: String, result: JsPromptResult): Boolean {
-            val input = EditText(view.context).apply { setText(defaultValue) }
-            AlertDialog.Builder(view.context).setMessage(message).setView(input)
+            val act = dialogContext(view.context)
+            if (act == null) { result.confirm(defaultValue); return true }
+            val input = EditText(act).apply { setText(defaultValue) }
+            AlertDialog.Builder(act).setMessage(message).setView(input)
                 .setPositiveButton("确定") { _, _ -> result.confirm(input.text.toString()) }
                 .setNegativeButton("取消") { _, _ -> result.cancel() }
                 .setOnCancelListener { result.cancel() }.show()
@@ -701,6 +714,16 @@ class BrowserViewModel : ViewModel() {
 
     // ==================== AI 网页操作工具 ====================
 
+    /** 向上回溯拿到可弹窗的 Activity 上下文；拿不到返回 null，避免用非 Activity 上下文弹窗崩溃 */
+    private fun dialogContext(c: Context): android.app.Activity? {
+        var x: Context? = c
+        while (x != null) {
+            if (x is android.app.Activity) return x
+            x = (x as? android.content.ContextWrapper)?.baseContext
+        }
+        return null
+    }
+
     /** 按指定引擎拼搜索地址（与设置里的搜索引擎保持一致，另支持 360） */
     private fun searchUrlWith(engine: String, query: String): String {
         val q = java.net.URLEncoder.encode(query, "UTF-8")
@@ -712,6 +735,65 @@ class BrowserViewModel : ViewModel() {
             "duckduckgo", "ddg" -> "https://duckduckgo.com/?q=$q"
             else -> "https://www.bing.com/search?q=$q"
         }
+    }
+
+    /**
+     * 各大平台的站内搜索地址（开源仓库 / 包仓库 / 应用商店）。
+     * platform 为空或未知时返回 null，交给 [searchUrlWith] 走通用搜索引擎。
+     */
+    private fun platformSearchUrl(platform: String, query: String): String? {
+        val q = java.net.URLEncoder.encode(query, "UTF-8")
+        return when (platform.lowercase()) {
+            // —— 开源代码托管 ——
+            "github", "gh" -> "https://github.com/search?q=$q&type=repositories"
+            "gitee", "码云" -> "https://search.gitee.com/?q=$q&type=repository"
+            "gitlab" -> "https://gitlab.com/search?search=$q"
+            "sourceforge", "sf" -> "https://sourceforge.net/directory/?q=$q"
+            // —— 开源应用商店 ——
+            "fdroid", "f-droid", "fd" -> "https://search.f-droid.org/?q=$q&lang=zh_Hans"
+            "apkpure" -> "https://apkpure.com/search?q=$q"
+            "aptoide" -> "https://en.aptoide.com/search?query=$q"
+            // —— 包仓库 ——
+            "npm" -> "https://www.npmjs.com/search?q=$q"
+            "pypi" -> "https://pypi.org/search/?q=$q"
+            "maven" -> "https://search.maven.org/search?q=$q"
+            "crates", "cargo" -> "https://crates.io/search?q=$q"
+            "huggingface", "hf" -> "https://huggingface.co/models?search=$q"
+            "packagist" -> "https://packagist.org/search/?q=$q"
+            // —— 安卓应用商店 / 社区 ——
+            "coolapk", "酷安" -> "https://www.coolapk.com/search?q=$q"
+            "tencent", "应用宝", "qq" -> "https://sj.qq.com/search?q=$q"
+            "wandoujia", "豌豆荚" -> "https://www.wandoujia.com/search?key=$q"
+            "huawei", "华为" -> "https://appgallery.huawei.com/search/$q"
+            "xiaomi", "小米" -> "https://app.mi.com/search?keywords=$q"
+            // —— 技术问答 ——
+            "stackoverflow", "so1" -> "https://stackoverflow.com/search?q=$q"
+            else -> null
+        }
+    }
+
+    /** 平台站内搜索时用于过滤结果的域名片段（只保留平台自身链接，去掉导航与广告） */
+    private fun platformHostHint(platform: String): String = when (platform.lowercase()) {
+        "github", "gh" -> "github.com"
+        "gitee", "码云" -> "gitee.com"
+        "gitlab" -> "gitlab.com"
+        "sourceforge", "sf" -> "sourceforge.net"
+        "fdroid", "f-droid", "fd" -> "f-droid.org"
+        "apkpure" -> "apkpure.com"
+        "aptoide" -> "aptoide.com"
+        "npm" -> "npmjs.com"
+        "pypi" -> "pypi.org"
+        "maven" -> "maven.org"
+        "crates", "cargo" -> "crates.io"
+        "huggingface", "hf" -> "huggingface.co"
+        "packagist" -> "packagist.org"
+        "coolapk", "酷安" -> "coolapk.com"
+        "tencent", "应用宝", "qq" -> "sj.qq.com"
+        "wandoujia", "豌豆荚" -> "wandoujia.com"
+        "huawei", "华为" -> "appgallery.huawei.com"
+        "xiaomi", "小米" -> "app.mi.com"
+        "stackoverflow", "so1" -> "stackoverflow.com"
+        else -> ""
     }
 
     /** 在 tab 上跑一段 JS 并取回字符串结果 */
@@ -791,30 +873,42 @@ class BrowserViewModel : ViewModel() {
                 val q = args.optString("query").trim()
                 if (q.isBlank()) return "缺少 query：要搜什么？"
                 val wv = tab.webView ?: return "浏览器还没准备好"
+                val platform = args.optString("platform").trim()
+                val platformUrl = if (platform.isNotBlank()) platformSearchUrl(platform, q) else null
                 val engine = args.optString("engine").trim().ifBlank { Settings.searchEngine }
                 val limit = args.optInt("limit", 8).coerceIn(3, 15)
-                val url = searchUrlWith(engine, q)
+                val url = platformUrl ?: searchUrlWith(engine, q)
+                val hostHint = if (platformUrl != null) platformHostHint(platform) else ""
+                val where = if (platformUrl != null) "站内·$platform" else engine
+                // 平台站内搜索的结果节点结构各不相同，这里给一套通用容器，并用域名过滤兜底
+                val boxes = if (platformUrl != null)
+                    "div.search-title, .Box-row, .repo-list-item, .item, .result-item, .result, " +
+                        ".package-header, .package-list-item, .package-snippet, .snippet, .app_list_item, " +
+                        ".search-result, .ant-list-item, article, li"
+                else
+                    "li.b_algo, div.g, .result, .result-item, .vrwrap, .res-list, .c-container, .b_algo, article"
                 tab.url = url
                 wv.loadUrl(url)
                 awaitPage(tab, 12000)
                 kotlinx.coroutines.delay(500)
                 val js = """
                     (function(){
-                      var limit=__LIMIT__;
+                      var limit=__LIMIT__, host=__HOST__;
                       var selfRe=/(^|\.)(bing\.com|baidu\.com|google\.|sogou\.com|so\.com|duckduckgo\.com|microsoft\.com|msn\.com)$/i;
                       var out=[],seen={};
                       function push(t,u,s){
                         if(!u||u.indexOf('http')!==0) return;
                         try{
                           var h=new URL(u).hostname;
-                          if(selfRe.test(h) && u.indexOf('/link?')<0 && u.indexOf('url=')<0) return;
+                          if(host){ if(u.toLowerCase().indexOf(host)<0) return; }
+                          else if(selfRe.test(h) && u.indexOf('/link?')<0 && u.indexOf('url=')<0) return;
                         }catch(e){ return; }
                         if(seen[u]) return; seen[u]=1;
                         out.push({t:((t||'')+'').replace(/\s+/g,' ').trim().slice(0,120),
                                   u:u.slice(0,300),
                                   s:((s||'')+'').replace(/\s+/g,' ').trim().slice(0,180)});
                       }
-                      var boxes=document.querySelectorAll('li.b_algo, div.g, .result, .result-item, .vrwrap, .res-list, .c-container, .b_algo, article');
+                      var boxes=document.querySelectorAll(__BOXES__);
                       for(var i=0;i<boxes.length && out.length<limit;i++){
                         var b=boxes[i];
                         var a=b.querySelector('h2 a[href], h3 a[href], a[href]');
@@ -828,7 +922,10 @@ class BrowserViewModel : ViewModel() {
                       }
                       return JSON.stringify({url:location.href,items:out});
                     })();
-                """.trimIndent().replace("__LIMIT__", limit.toString())
+                """.trimIndent()
+                    .replace("__LIMIT__", limit.toString())
+                    .replace("__HOST__", JSONObject.quote(hostHint))
+                    .replace("__BOXES__", JSONObject.quote(boxes))
                 val o = runCatching { JSONObject(evalJs(tab, js)) }.getOrNull()
                     ?: return "搜索页读取失败。可以直接用 web_open 打开目标网址。"
                 val items = o.optJSONArray("items")
@@ -836,7 +933,7 @@ class BrowserViewModel : ViewModel() {
                     return "搜索「$q」没拿到结果（可能被验证码或跳转拦住）。换个关键词，或直接 web_open 已知网址。"
                 }
                 buildString {
-                    append("搜索「").append(q).append("」（").append(engine).append("）结果 ")
+                    append("搜索「").append(q).append("」（").append(where).append("）结果 ")
                     append(items.length()).append(" 条：\n")
                     for (i in 0 until items.length()) {
                         val it = items.optJSONObject(i) ?: continue
@@ -845,7 +942,10 @@ class BrowserViewModel : ViewModel() {
                         val s = it.optString("s")
                         if (s.isNotBlank()) append("   ").append(s).append("\n")
                     }
-                    append("挑官网：选域名与官方品牌一致的条目，跳过下载站 / 聚合站 / 排行站；打开候选页核对后再下结论。")
+                    if (platformUrl != null)
+                        append("挑官方：优先作者 / 项目主页与官方发布渠道，跳过镜像、搬运与聚合页；打开候选页核对后再下结论。")
+                    else
+                        append("挑官网：选域名与官方品牌一致的条目，跳过下载站 / 聚合站 / 排行站；打开候选页核对后再下结论。")
                 }
             }
 

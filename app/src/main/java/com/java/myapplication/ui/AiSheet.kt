@@ -1,6 +1,9 @@
 package com.java.myapplication.ui
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -40,6 +43,8 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.java.myapplication.BrowserViewModel
 import com.java.myapplication.Settings
@@ -47,9 +52,10 @@ import com.java.myapplication.ai.AiClient
 import com.java.myapplication.ai.Translator
 import kotlinx.coroutines.launch
 
-private data class ChatMsg(val role: String, val content: String)
+private var chatMsgSeq = 0L
+private fun nextChatId(): Long = ++chatMsgSeq
+private data class ChatMsg(val role: String, val content: String, val id: Long = nextChatId())
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AiSheet(
     vm: BrowserViewModel,
@@ -61,20 +67,55 @@ fun AiSheet(
     var selectedTab by remember { mutableIntStateOf(initialTab) }
     val tabTitles = listOf("总结", "翻译", "对话")
 
-    ModalBottomSheet(onDismissRequest = onDismiss) {
-        Column(Modifier.fillMaxWidth().imePadding().padding(horizontal = 16.dp)) {
-            TabRow(selectedTabIndex = selectedTab) {
-                tabTitles.forEachIndexed { i, t ->
-                    Tab(selected = selectedTab == i, onClick = { selectedTab = i }, text = { Text(t) })
+    // 自绘底部面板（不用 ModalBottomSheet）：整块悬浮在输入法之上，输入框高度固定、不被键盘拉伸
+    Box(Modifier.fillMaxSize()) {
+        Box(
+            Modifier
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = 0.32f))
+                .clickable(
+                    interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
+                    indication = null,
+                    onClick = onDismiss
+                )
+        )
+        Surface(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth()
+                .imePadding()
+                .heightIn(max = 560.dp),
+            shape = RoundedCornerShape(topStart = 22.dp, topEnd = 22.dp),
+            color = MaterialTheme.colorScheme.surface,
+            tonalElevation = 3.dp
+        ) {
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(start = 16.dp, end = 16.dp, top = 10.dp, bottom = 12.dp)
+            ) {
+                Box(Modifier.fillMaxWidth().padding(bottom = 8.dp), contentAlignment = Alignment.Center) {
+                    Box(
+                        Modifier
+                            .width(36.dp)
+                            .height(4.dp)
+                            .clip(RoundedCornerShape(2.dp))
+                            .background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f))
+                    )
                 }
+                TabRow(selectedTabIndex = selectedTab) {
+                    tabTitles.forEachIndexed { i, t ->
+                        Tab(selected = selectedTab == i, onClick = { selectedTab = i }, text = { Text(t) })
+                    }
+                }
+                Spacer(Modifier.height(12.dp))
+                when (selectedTab) {
+                    0 -> SummaryPane(vm, onOpenSettings)
+                    1 -> TranslatePane(vm)
+                    2 -> ChatPane(vm, onOpenSettings, prefill)
+                }
+                Spacer(Modifier.height(8.dp))
             }
-            Spacer(Modifier.height(12.dp))
-            when (selectedTab) {
-                0 -> SummaryPane(vm, onOpenSettings)
-                1 -> TranslatePane(vm)
-                2 -> ChatPane(vm, onOpenSettings, prefill)
-            }
-            Spacer(Modifier.height(24.dp))
         }
     }
 }
@@ -306,10 +347,11 @@ private fun ChatPane(vm: BrowserViewModel, onOpenSettings: () -> Unit, prefill: 
         }
         LazyColumn(
             state = listState,
-            modifier = Modifier.fillMaxWidth().height(300.dp),
+            // 高度自适应面板剩余空间：键盘弹出时自动收窄，不会把面板撑高
+            modifier = Modifier.fillMaxWidth().weight(1f, fill = false).heightIn(min = 120.dp, max = 300.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            items(messages) { m ->
+            items(messages, key = { it.id }) { m ->
                 if (m.role == "step") {
                     // 工具执行痕迹：让用户看得见 AI 正在动网页
                     Text(
@@ -362,7 +404,7 @@ private fun ChatPane(vm: BrowserViewModel, onOpenSettings: () -> Unit, prefill: 
             Spacer(Modifier.height(6.dp))
         }
 
-        // ---------- 输入行：附件 + 输入框 + 发送（固定高度，防拉伸） ----------
+        // ---------- 输入行：附件 + 输入框 + 发送（高度固定，键盘不会拉伸输入框） ----------
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Bottom) {
             Surface(
                 onClick = { pickFile.launch("*/*") },
@@ -380,9 +422,10 @@ private fun ChatPane(vm: BrowserViewModel, onOpenSettings: () -> Unit, prefill: 
             BasicTextField(
                 value = input,
                 onValueChange = { input = it },
-                modifier = Modifier.weight(1f).heightIn(min = 52.dp, max = 120.dp),
+                // 高度固定（竖框）：文字多了在框内滚动，不会被键盘或内容撑高
+                modifier = Modifier.weight(1f).height(76.dp),
                 textStyle = MaterialTheme.typography.bodyLarge.copy(color = MaterialTheme.colorScheme.onSurface),
-                maxLines = 4,
+                maxLines = 3,
                 enabled = !loading
             ) { inner ->
                 OutlinedTextFieldDefaults.DecorationBox(

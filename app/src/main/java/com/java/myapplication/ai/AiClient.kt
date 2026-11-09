@@ -35,7 +35,7 @@ object AiClient {
         append(Settings.aiModel.ifBlank { "未配置" })
         if (Settings.aiProvider.isNotBlank()) append("；接入渠道：").append(Settings.aiProvider)
         append("；工具能力：")
-        append(if (Settings.aiWebTools) "可操作网页（搜索/读取/页内查找/打开/点击/填写/滚动/返回/下载）" else "已关闭")
+        append(if (Settings.aiWebTools) "可操作网页（搜索/站内搜索/读取/页内查找/打开/点击/填写/滚动/返回/下载）" else "已关闭")
         append("。")
     }
 

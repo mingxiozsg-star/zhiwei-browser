@@ -186,6 +186,8 @@ object Store {
 
     // ---------- 扫码记录 ----------
     fun addScan(text: String, format: String, kind: String) {
+        // 无痕模式下不留痕，与 addHistory 保持一致
+        if (Settings.incognito) return
         if (text.isBlank()) return
         scans.removeAll { it.text == text && it.kind == kind }
         scans.add(0, ScanRecord(text, format, kind))

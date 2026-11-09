@@ -72,7 +72,19 @@ import com.java.myapplication.Store
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(vm: BrowserViewModel, onBack: () -> Unit) {
-    var page by remember { mutableStateOf("root") }
+    // 导航栈：只记录「怎么进来的」，返回时逐级回退，不再一步跳回设置首页
+    var stack by remember { mutableStateOf(listOf("root")) }
+    var pageDir by remember { androidx.compose.runtime.mutableIntStateOf(1) }
+    val page = stack.last()
+    // 每个页面各自的滚动位置：重新进入时停在离开时的位置
+    val scrollStates = remember { mutableMapOf<String, androidx.compose.foundation.ScrollState>() }
+    fun push(p: String) { pageDir = 1; stack = stack + p }
+    fun pop(): Boolean {
+        if (stack.size <= 1) return false
+        pageDir = -1
+        stack = stack.dropLast(1)
+        return true
+    }
     var showUpdate by remember { mutableStateOf(false) }
     var updateProgress by remember { androidx.compose.runtime.mutableFloatStateOf(0f) }
     Settings.version.intValue // 订阅变更
@@ -91,10 +103,8 @@ fun SettingsScreen(vm: BrowserViewModel, onBack: () -> Unit) {
         }
     }
 
-    // 返回键：二级页 → 设置首页 → 浏览器，绝不直接退出
-    BackHandler {
-        if (page != "root") page = "root" else onBack()
-    }
+    // 返回键：逐级回退（从哪里进来就退回哪里），到栈底再按才回浏览器
+    BackHandler { if (!pop()) onBack() }
 
     val title = when (page) {
         "startup" -> "启动与标签页"
@@ -120,7 +130,7 @@ fun SettingsScreen(vm: BrowserViewModel, onBack: () -> Unit) {
             TopAppBar(
                 title = { Text(title) },
                 navigationIcon = {
-                    IconButton(onClick = { if (page == "root") onBack() else page = "root" }) {
+                    IconButton(onClick = { if (!pop()) onBack() }) {
                         Icon(Icons.Filled.ArrowBack, "返回")
                     }
                 },
@@ -135,19 +145,30 @@ fun SettingsScreen(vm: BrowserViewModel, onBack: () -> Unit) {
             androidx.compose.animation.AnimatedContent(
                 targetState = page,
                 transitionSpec = {
-                    (androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(260)) +
-                        androidx.compose.animation.slideInHorizontally(androidx.compose.animation.core.tween(260)) { it / 6 })
+                    // 方向感知：进二级页从右滑入，返回时反向滑回；不用缩放，避免叠加动画抖动
+                    (androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(240)) +
+                        androidx.compose.animation.slideInHorizontally(
+                            androidx.compose.animation.core.tween(
+                                280, easing = androidx.compose.animation.core.FastOutSlowInEasing
+                            )
+                        ) { w -> pageDir * w / 3 })
                         .togetherWith(
-                            androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(200)) +
-                                androidx.compose.animation.slideOutHorizontally(androidx.compose.animation.core.tween(200)) { -it / 6 })
+                            androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(180)) +
+                                androidx.compose.animation.slideOutHorizontally(
+                                    androidx.compose.animation.core.tween(
+                                        240, easing = androidx.compose.animation.core.FastOutSlowInEasing
+                                    )
+                                ) { w -> -pageDir * w / 3 })
                 },
                 label = "settingsPage"
             ) { target ->
-                Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+                // 每页复用各自的 ScrollState：返回时停在离开时的位置，而不是回到顶部
+                val ss = scrollStates.getOrPut(target) { androidx.compose.foundation.ScrollState(0) }
+                Column(Modifier.fillMaxSize().verticalScroll(ss)) {
             when (target) {
-                "root" -> SettingsRoot { page = it }
+                "root" -> SettingsRoot { push(it) }
                 "startup" -> StartupPage()
-                "appearance" -> AppearancePage { page = "shortcuts" }
+                "appearance" -> AppearancePage { push("shortcuts") }
                 "search" -> SearchPage()
                 "privacy" -> PrivacyPage(vm)
                 "ai" -> AiControlPage()

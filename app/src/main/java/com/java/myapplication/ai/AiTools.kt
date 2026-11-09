@@ -53,10 +53,14 @@ object AiTools {
         )
         .put(
             fn(
-                WEB_SEARCH, "用搜索引擎检索互联网，返回若干条结果的标题、网址与摘要。找官网、找资料、找下载时先用它——" +
-                    "不要凭记忆猜网址。拿到结果后打开候选页核对，确认是官方页面再回答。",
+                WEB_SEARCH, "用搜索引擎或指定平台检索互联网，返回若干条结果的标题、网址与摘要。找官网、找资料、找下载时先用它——" +
+                    "不要凭记忆猜网址。找开源项目 / 开源工具就用 platform 指定平台（如 github、gitee、f-droid），" +
+                    "找安卓应用可用平台（coolapk、tencent、apkpure）。拿到结果后打开候选页核对，确认是官方页面再回答。",
                 JSONObject()
                     .put("query", prop("string", "搜索关键词，越具体越好"))
+                    .put("platform", prop("string", "可选：站内搜索平台。github / gitee / gitlab / sourceforge / fdroid / " +
+                        "npm / pypi / maven / crates / huggingface / coolapk / tencent / wandoujia / huawei / apkpure。" +
+                        "留空则用通用搜索引擎"))
                     .put("engine", prop("string", "可选：bing / baidu / sogou / 360 / google / duckduckgo，默认用浏览器的搜索引擎")),
                 listOf("query")
             )
@@ -123,7 +127,8 @@ object AiTools {
         WEB_READ -> "读取网页内容"
         WEB_LINKS -> "查看页面链接"
         WEB_FIND -> "页内查找「" + args.optString("keyword").take(20) + "」"
-        WEB_SEARCH -> "搜索「" + args.optString("query").take(30) + "」"
+        WEB_SEARCH -> "搜索「" + args.optString("query").take(30) + "」" +
+            args.optString("platform").takeIf { it.isNotBlank() }?.let { "（$it）" }.orEmpty()
         WEB_OPEN -> "打开 " + args.optString("url").take(60)
         WEB_CLICK -> "点击「" + args.optString("target").take(24) + "」"
         WEB_TYPE -> "填写「" + args.optString("text").take(20) + "」"

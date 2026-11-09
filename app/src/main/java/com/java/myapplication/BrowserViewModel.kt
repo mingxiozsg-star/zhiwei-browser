@@ -566,12 +566,11 @@ class BrowserViewModel : ViewModel() {
 
         override fun onReceivedError(view: WebView, request: WebResourceRequest, error: android.webkit.WebResourceError) {
             if (!request.isForMainFrame) return
-            // 自定义 scheme（weixin:// alipays:// intent:// 等）与被动取消并不是真的「页面打不开」，
-            // 之前会把正常网页整个盖成「加载失败」，这里放行，只有真正的加载错误才弹错误页
+            // 自定义 scheme（weixin:// alipays:// intent:// 等）、被新导航取消（ERR_ABORTED）与重定向循环
+            // 都不是真的「页面打不开」，之前会把正常网页整个盖成「加载失败」，这里放行
+            if (error.errorCode == -3) return
             when (error.errorCode) {
                 WebViewClient.ERROR_UNSUPPORTED_SCHEME,
-                WebViewClient.ERROR_UNKNOWN_URL_SCHEME,
-                WebViewClient.ERROR_CANCELED,
                 WebViewClient.ERROR_REDIRECT_LOOP -> return
             }
             tab.loadError = true
